@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+/* Design tokens ported from the original t-card.html palette. */
+@theme {
+  --color-bg: #f0ede8;
+  --color-surface: #ffffff;
+  --color-surface2: #f7f5f2;
+  --color-surface3: #edeae5;
+  --color-border: #e0dcd5;
+  --color-border2: #c8c4bc;
+  --color-text: #1c1a17;
+  --color-text2: #5c574f;
+  --color-text3: #9c968e;
+  --color-teal: #0c6b50;
+  --color-teal2: #0f8563;
+  --color-teal-l: #dff2eb;
+  --color-amber: #a86e0a;
+  --color-red: #922020;
+  --color-blue: #1558a0;
+  --color-purple: #4a42b0;
+  --color-green: #2e6810;
+  --color-green-l: #eaf5e0;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+}
