@@ -17,6 +17,22 @@ const SELECT =
   '*, order:orders(*, customer:customers(*)), mould:moulds(*), assignments:ticket_assignments(*, operative:operatives(*)), time:time_sessions(*)';
 
 const timerSchema = z.object({ operativeId: z.number().int() });
+const mouldAssignSchema = z.object({ mouldId: z.number().int().nullable() });
+const cureSetSchema = z.object({ targetStage: z.string().optional(), mins: z.number().int().positive() });
+
+/** A mould is free if not in maintenance and its in-mould slots (Gel Coat /
+ * Laminating) are below capacity. */
+async function isMouldFree(mouldId: number): Promise<boolean> {
+  const mould = unwrap(
+    await db.from('moulds').select('qty, status').eq('id', mouldId).is('deletedAt', null).maybeSingle(),
+  ) as { qty: number; status: string } | null;
+  if (!mould || mould.status === 'Maintenance') return false;
+  const active = unwrap(
+    await db.from('tickets').select('id')
+      .eq('mouldId', mouldId).in('status', ['4. Gel Coat', '5. Laminating']).is('deletedAt', null),
+  ) as { id: number }[];
+  return active.length < (mould.qty || 1);
+}
 
 /** Default starting status by ticket type (RAW items start "Ordered"). */
 function defaultStatus(type: string): TicketStatus {
@@ -169,6 +185,95 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
       await db.from('time_sessions').update({ end: new Date().toISOString() })
         .eq('ticketId', id).eq('operativeId', body.operativeId).is('end', null).select('id'),
     );
+    return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+  });
+
+  // Assign / unassign a mould (auto-advances stage 3 → Gel Coat if the mould is free)
+  app.post('/:id/mould', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const body = parse(mouldAssignSchema, req.body, reply);
+    if (body === PARSE_FAILED) return;
+    const t = unwrap(
+      await db.from('tickets').select('status, orderId, compParentId').eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as ({ status: string } & TicketRef) | null;
+    if (!t) return reply.notFound('Ticket not found');
+
+    if (body.mouldId == null) {
+      unwrap(await db.from('tickets').update({ mouldId: null }).eq('id', id).select('id'));
+      return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+    }
+
+    const mould = unwrap(
+      await db.from('moulds').select('id').eq('id', body.mouldId).is('deletedAt', null).maybeSingle(),
+    );
+    if (!mould) return reply.badRequest('mouldId does not reference a mould');
+
+    const update: Record<string, unknown> = { mouldId: body.mouldId };
+    let autoAdvanced = false;
+    if (t.status === '3. Queue - Awaiting Mould' && (await isMouldFree(body.mouldId))) {
+      update.status = '4. Gel Coat';
+      update.pct = AUTO_PCT['4. Gel Coat'];
+      autoAdvanced = true;
+    }
+    unwrap(await db.from('tickets').update(update).eq('id', id).select('id'));
+    if (autoAdvanced) {
+      unwrap(
+        await db.from('audit_log').insert({
+          entityType: 'ticket', entityId: id, field: 'status',
+          fromValue: '3. Queue - Awaiting Mould', toValue: '4. Gel Coat',
+          note: 'Auto-advanced — mould was free',
+        }).select('id'),
+      );
+      await recomputeForTicket(t);
+    }
+    return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+  });
+
+  // Start a gel-coat cure timer
+  app.post('/:id/cure', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const body = parse(cureSetSchema, req.body, reply);
+    if (body === PARSE_FAILED) return;
+    const exists = unwrap(await db.from('tickets').select('id').eq('id', id).is('deletedAt', null).maybeSingle());
+    if (!exists) return reply.notFound('Ticket not found');
+    unwrap(
+      await db.from('tickets').update({
+        cureTargetStage: body.targetStage ?? null,
+        cureStart: new Date().toISOString(),
+        cureMins: body.mins,
+        cureCleared: false,
+      }).eq('id', id).select('id'),
+    );
+    return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+  });
+
+  // Confirm a cure is done — clears the timer and advances to the target stage (if set)
+  app.post('/:id/cure/clear', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const t = unwrap(
+      await db.from('tickets').select('status, cureTargetStage, orderId, compParentId')
+        .eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as ({ status: string; cureTargetStage: string | null } & TicketRef) | null;
+    if (!t) return reply.notFound('Ticket not found');
+
+    const update: Record<string, unknown> = { cureCleared: true };
+    if (t.cureTargetStage) {
+      update.status = t.cureTargetStage;
+      update.pct = pctForStatus(t.cureTargetStage);
+    }
+    unwrap(await db.from('tickets').update(update).eq('id', id).select('id'));
+    if (t.cureTargetStage) {
+      unwrap(
+        await db.from('audit_log').insert({
+          entityType: 'ticket', entityId: id, field: 'status',
+          fromValue: t.status, toValue: t.cureTargetStage, note: 'Cure confirmed',
+        }).select('id'),
+      );
+      await recomputeForTicket(t);
+    }
     return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
   });
 

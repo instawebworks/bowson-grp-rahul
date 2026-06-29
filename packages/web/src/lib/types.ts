@@ -88,6 +88,10 @@ export interface Ticket {
   netPrice: number;
   mouldId: number | null;
   mould?: Mould | null;
+  cureTargetStage: string | null;
+  cureStart: string | null;
+  cureMins: number | null;
+  cureCleared: boolean;
   resinType: string | null;
   deadline?: string | null;
   completed: string | null;

@@ -1,6 +1,7 @@
 import { useTickets } from '../lib/hooks';
-import { Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
+import { Button, Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
 import { money } from '../lib/format';
+import { downloadCsv } from '../lib/csv';
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -15,7 +16,28 @@ export function Tickets() {
 
   return (
     <>
-      <PageHeader title="All Tickets" sub={`${rows.length} ticket${rows.length === 1 ? '' : 's'}`} />
+      <PageHeader
+        title="All Tickets"
+        sub={`${rows.length} ticket${rows.length === 1 ? '' : 's'}`}
+        actions={
+          <Button
+            onClick={() =>
+              downloadCsv('tickets.csv', [
+                { key: 'tn', label: 'TN', value: (t) => t.tn ?? '' },
+                { key: 'type', label: 'Type', value: (t) => t.type },
+                { key: 'order', label: 'Order', value: (t) => t.order?.orderNumber ?? `#${t.orderId}` },
+                { key: 'detail', label: 'Detail', value: (t) => t.detail },
+                { key: 'status', label: 'Status', value: (t) => t.status },
+                { key: 'pct', label: 'Progress %', value: (t) => t.pct },
+                { key: 'assigned', label: 'Assigned', value: (t) => (t.assignments ?? []).map((a) => a.operative?.name).filter(Boolean).join('; ') },
+                { key: 'value', label: 'Value', value: (t) => t.netPrice },
+              ], rows)
+            }
+          >
+            ⭳ Export CSV
+          </Button>
+        }
+      />
       <Content>
         <Card>
           <Table head={['TN', 'Type', 'Order', 'Detail', 'Status', 'Progress', 'Assigned', 'Value']}>

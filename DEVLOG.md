@@ -230,3 +230,165 @@ library changed.
   realtime publication, which land with auth in Phase 6.
 - Right-click context menu for multi-operative assignment (currently single-assign
   via drag; multi-assign still available through the API).
+
+## 2026-06-27 — Phase 4 cont.: mould assignment + gel-coat cure timers
+
+**Done**
+- **API:** `POST /api/tickets/:id/mould` (assign/unassign; if the mould is free —
+  not in maintenance and in-mould slots < qty — and the ticket is at "3. Queue -
+  Awaiting Mould", **auto-advances to "4. Gel Coat"** with an audit entry + order
+  recompute). `POST /api/tickets/:id/cure` (start timer: target stage + minutes) and
+  `POST /api/tickets/:id/cure/clear` (confirm cure → advances to the target stage,
+  audit + recompute). `isMouldFree` ported from the prototype.
+- **Frontend:** Order detail tickets now have a **Mould / Cure** column — a mould
+  `<select>` for items in mould stages (auto-advance on assign) and a cure control
+  (preset 30m/1h/2h/4h; live countdown; "confirm" when done). Board cards show a
+  live **cure badge** (⏱ remaining / ✓ done).
+- Added `cureState` + `fmtCureMins` helpers; new hooks `useAssignMould`,
+  `useSetCure`, `useConfirmCure`.
+
+**Verified**
+- API: queue→assign mould ⇒ auto-advanced to "4. Gel Coat"; set cure (60m → target
+  Laminating) ⇒ confirm ⇒ advanced to "5. Laminating", timer cleared.
+- Playwright audit clean (order detail shows Mould/Cure column); all packages typecheck.
+
+**Next up**
+- **Phase 5** — Schedule view + capacity math (HRS_PER_DAY = 7.5, per-stage skills),
+  Mould planner tabs, CSV import/export, global search, audit-log UI.
+- Add/edit forms for Operatives & Moulds; order edit (deadline/scheduling).
+- **Phase 6** — auth/roles (RLS) → then switch the board from polling to true Realtime.
+
+## 2026-06-27 — Phase 5 (part 1): admin CRUD, global search, activity log
+
+**Done**
+- **API:** `GET /api/search?q=` (orders by number/site, tickets by tn/detail, ilike,
+  sanitised) and `GET /api/audit` (recent audit-log entries, optional entity filter);
+  registered both.
+- **Operatives add/edit** — `OperativeForm` (skills as toggle chips from
+  `STAGE_SKILLS`, default hrs/day) + `useCreateOperative`/`useUpdateOperative`;
+  Operatives page now has "+ New Operative" and row/Edit.
+- **Moulds add/edit** — `MouldForm` (ref, name, capacity, status, notes) +
+  `useCreateMould`/`useUpdateMould`; Moulds page has "+ New Mould" and row/Edit.
+- **Global search** — search box in the sidebar → `/search?q=` results page (orders +
+  tickets, click-through to the order).
+- **Activity Log** page (`/audit`, new Admin nav item) — status changes rendered as
+  coloured from→to pills with notes (incl. "Auto-advanced — mould was free",
+  "Cure confirmed").
+
+**Features added / modified**
+- Completed admin CRUD parity (customers ✓ already; now operatives + moulds).
+- New visibility features: global search + activity/audit log.
+
+**Verified**
+- API: search 'DEMO' → 1 order; search 'Twin' → 1 ticket; audit → 10 entries;
+  operative + mould create/edit/delete. Playwright audit clean (search + activity
+  pages render); all packages typecheck.
+
+**Next up (Phase 5 part 2)**
+- Schedule view + capacity math (HRS_PER_DAY = 7.5, per-stage skills/availability).
+- Mould planner tabs (board / schedule / unassigned / register).
+- CSV import/export; order edit (deadline/scheduling).
+
+## 2026-06-27 — Phase 5 (part 2): Schedule + capacity, order edit
+
+**Done**
+- **Shared** `schedule.ts` (pure): `mondayOf`, `formatWc`, `wcForDeadline`
+  (Monday 2 weeks before deadline, ported), `wcKey` (normalise wc → Monday ISO),
+  `nextWeeks`.
+- **API** `GET /api/schedule`: weekly capacity = Σ operatives × 5 × (defaultHrs ?? 7.5);
+  committed = Σ remaining labour hours (ticket hrs × `STAGE_HRS_REMAINING[status]`)
+  grouped by target week; returns next-8-weeks + any committed weeks with utilisation.
+  Order **PATCH now propagates `wc`** down to the order's tickets.
+- **Order edit** — `EditOrderForm` (status, customer, ref, despatch, resin, **deadline
+  → auto-calculated target week**, notes); "Edit order" button on the order detail.
+- **Schedule page** — capacity summary + per-week table (tickets, committed vs
+  capacity, utilisation bar, overload ⚠).
+
+**Verified**
+- API: capacity 225 h (6 ops × 5 × 7.5); PATCH wc propagated to ticket; that week's
+  committed = 10 h / 4 % util. Playwright audit clean (schedule + edit-order modal);
+  all packages typecheck.
+
+**Next up (Phase 5 part 3 / final)**
+- Mould planner tabs (occupancy board / unassigned queue / register).
+- CSV import/export.
+- Then **Phase 6** — auth/roles (RLS) + switch board to true Realtime.
+
+## 2026-06-27 — Phase 5 (part 3, final): mould planner + CSV
+
+**Done**
+- **CSV utility** (`lib/csv.ts`): `downloadCsv` (quoted, safe) + `parseCsv`
+  (quote-aware), no deps.
+- **CSV export** buttons on **All Orders** and **All Tickets**; export + import
+  on the Moulds **Register**.
+- **Mould planner tabs** on the Moulds page:
+  - **Register** — table (add/edit) + CSV import/export.
+  - **Board** — occupancy cards per mould (Free / Partial / Full / Maintenance,
+    n/qty in use, in-mould + queued tickets).
+  - **Unassigned** — tickets at "3. Queue - Awaiting Mould" with no mould; assign
+    via dropdown (auto-advances to Gel Coat if the mould is free).
+
+**Features added / modified**
+- Mould planning/visibility + CSV data in/out — **Phase 5 complete**.
+
+**Verified**
+- Playwright audit clean (Board tab shows 3 mould cards Free 0/qty; Unassigned tab
+  renders); all packages typecheck.
+
+**Next up — Phase 6 (final phase)**
+- Supabase Auth + roles (admin / manager / operative) via RLS policies.
+- Switch the T-Card board from polling to **true Supabase Realtime**.
+- Then deployment (frontend + API hosting, CI).
+
+## 2026-06-27 — Phase 6 (part 1): authentication (env-gated)
+
+**Done**
+- **Backend:** `AUTH_REQUIRED` env flag + a global `onRequest` hook that verifies
+  the Supabase JWT on `/api/*` (skips `/health` + CORS pre-flight). Off by default
+  so nothing breaks until auth is configured.
+- **Frontend:** `AuthProvider` (Supabase session + `onAuthStateChange`), branded
+  **Login** page, and an App `Gate` — when `VITE_REQUIRE_AUTH=true` it shows login
+  until signed in (and a clear message if Supabase isn't configured). The API
+  client already attaches the bearer token. Sidebar shows the signed-in email +
+  **Sign out**.
+- **`supabase/rls.sql`** — authenticated SELECT policies on all tables (writes stay
+  service-role/backend only) + adds the live tables to the `supabase_realtime`
+  publication (for Phase 6 part 2).
+- Documented enablement in README + `.env.example` (`AUTH_REQUIRED`,
+  `VITE_REQUIRE_AUTH`).
+
+**Verified**
+- Auth **off** (default): `/health` ok, `GET /api/orders` → 200 with no token;
+  Playwright audit clean — app unchanged.
+- Auth **on** (temp `VITE_REQUIRE_AUTH=true`): app shows the branded login wall,
+  zero page errors. All packages typecheck.
+
+**Next up — Phase 6 (part 2, final)**
+- Switch the T-Card board from polling to **true Supabase Realtime** (subscribe to
+  `tickets`/`time_sessions` changes; keep polling as a fallback).
+- Role-based gating (admin / manager / operative) on sensitive writes.
+- Deployment (host frontend + API; managed/self-hosted Supabase already live).
+
+## 2026-06-27 — Phase 6 (part 2): Realtime + role gating
+
+**Done**
+- **Realtime:** `useBoardRealtime` subscribes to Supabase `postgres_changes` on
+  `tickets`, `time_sessions`, `ticket_assignments` and invalidates the board query
+  — near-instant multi-screen updates. Board polling dropped to a 15 s fallback.
+  No-op if Supabase isn't configured (needs the auth-on RLS read policies from
+  `supabase/rls.sql` to receive events).
+- **Backend role gating:** `resolveRole` (JWT app_metadata → `users` table →
+  `DEFAULT_ROLE`, default admin) + a `preHandler` that requires **manager/admin**
+  for mutations *outside* the shop-floor ticket workflow. Shop-floor actions
+  (`/tickets/:id/status|assign|mould|cure|time`) stay open to operatives. Only
+  active when `AUTH_REQUIRED=true`.
+- **Frontend:** `useAuth` now exposes `role` + `canManage` (true when auth is off
+  or role is admin/manager). Gated the "+ New Order/Customer/Operative/Mould" and
+  the order detail "Edit order" / "+ Add ticket" buttons.
+
+**Verified**
+- Auth off (default): `GET /api/orders` → 200; Playwright audit clean — app and
+  board unchanged (manage buttons visible since canManage=true). All packages typecheck.
+
+**Phase 6 status:** auth, Realtime, and role gating complete. **Remaining: deployment**
+(host the web app + API; Supabase is already live self-hosted).

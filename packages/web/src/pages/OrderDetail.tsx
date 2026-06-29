@@ -1,11 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { GRP_STAGES, RAW_STAGES } from '@bowson/shared';
-import { useChangeTicketStatus, useOrder } from '../lib/hooks';
+import { GRP_STAGES, nextStage, RAW_STAGES } from '@bowson/shared';
+import {
+  useAssignMould,
+  useChangeTicketStatus,
+  useConfirmCure,
+  useMoulds,
+  useOrder,
+  useSetCure,
+} from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
 import { AddTicketModal } from '../components/AddTicketModal';
-import { fmtDate, money } from '../lib/format';
+import { EditOrderForm } from '../components/EditOrderForm';
+import { useAuth } from '../lib/auth';
+import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
 import type { Ticket } from '../lib/types';
+
+const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
+const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
+const CURE_PRESETS = [30, 60, 120, 240];
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -43,7 +56,93 @@ function StatusSelect({ ticket, orderId }: { ticket: Ticket; orderId: number }) 
   );
 }
 
-function TicketRow({ ticket, orderId, indent }: { ticket: Ticket; orderId: number; indent?: boolean }) {
+function MouldCureCell({
+  ticket,
+  orderId,
+  moulds,
+  now,
+}: {
+  ticket: Ticket;
+  orderId: number;
+  moulds: { id: number; ref: string }[];
+  now: number;
+}) {
+  const assignMould = useAssignMould(orderId);
+  const setCure = useSetCure(orderId);
+  const confirmCure = useConfirmCure(orderId);
+
+  // Mould is only relevant for manufactured items in the mould stages.
+  const showMould = ticket.type !== 'RAW' && ticket.type !== 'COMP' && MOULD_STAGES.includes(ticket.status);
+  const showCure = CURE_STAGES.includes(ticket.status);
+  const cure = cureState(ticket, now);
+
+  if (!showMould && !showCure) {
+    return <span className="text-text3">{ticket.mould?.ref ?? '—'}</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {showMould && (
+        <select
+          value={ticket.mouldId ?? ''}
+          disabled={assignMould.isPending}
+          onChange={(e) => assignMould.mutate({ ticketId: ticket.id, mouldId: e.target.value ? Number(e.target.value) : null })}
+          className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+        >
+          <option value="">— mould —</option>
+          {moulds.map((m) => (
+            <option key={m.id} value={m.id}>{m.ref}</option>
+          ))}
+        </select>
+      )}
+      {showCure &&
+        (cure ? (
+          <button
+            onClick={() => confirmCure.mutate({ ticketId: ticket.id })}
+            disabled={confirmCure.isPending}
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+              cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'
+            }`}
+            title="Confirm cure complete (advances to the next stage)"
+          >
+            {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
+          </button>
+        ) : (
+          <select
+            value=""
+            disabled={setCure.isPending}
+            onChange={(e) =>
+              setCure.mutate({
+                ticketId: ticket.id,
+                mins: Number(e.target.value),
+                targetStage: nextStage(ticket.status) ?? undefined,
+              })
+            }
+            className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
+          >
+            <option value="">+ cure timer…</option>
+            {CURE_PRESETS.map((m) => (
+              <option key={m} value={m}>{fmtCureMins(m)}</option>
+            ))}
+          </select>
+        ))}
+    </div>
+  );
+}
+
+function TicketRow({
+  ticket,
+  orderId,
+  moulds,
+  now,
+  indent,
+}: {
+  ticket: Ticket;
+  orderId: number;
+  moulds: { id: number; ref: string }[];
+  now: number;
+  indent?: boolean;
+}) {
   return (
     <tr className="border-b border-border last:border-0">
       <td className="px-3 py-2 tabular-nums text-text3">{ticket.tn ?? '—'}</td>
@@ -54,6 +153,7 @@ function TicketRow({ ticket, orderId, indent }: { ticket: Ticket; orderId: numbe
       </td>
       <td className="px-3 py-2"><StatusSelect ticket={ticket} orderId={orderId} /></td>
       <td className="px-3 py-2"><ProgressBar pct={ticket.pct} /></td>
+      <td className="px-3 py-2"><MouldCureCell ticket={ticket} orderId={orderId} moulds={moulds} now={now} /></td>
       <td className="px-3 py-2 tabular-nums">{money(ticket.netPrice)}</td>
     </tr>
   );
@@ -63,7 +163,15 @@ export function OrderDetail() {
   const { id } = useParams();
   const orderId = Number(id);
   const { data: order, isLoading, error } = useOrder(orderId);
+  const { data: moulds } = useMoulds();
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const { canManage } = useAuth();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   if (isLoading) return <><PageHeader title="Order" /><Content><div className="text-xs text-text3">Loading…</div></Content></>;
   if (error || !order)
@@ -85,13 +193,15 @@ export function OrderDetail() {
   return (
     <>
       {showAdd && <AddTicketModal orderId={orderId} onClose={() => setShowAdd(false)} />}
+      {showEdit && <EditOrderForm order={order} onClose={() => setShowEdit(false)} />}
       <PageHeader
         title={`Order ${order.orderNumber}`}
         sub={order.customer?.name ?? undefined}
         actions={
           <>
             <Link to="/orders"><Button>← All Orders</Button></Link>
-            <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>
+            {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
+            {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
           </>
         }
       />
@@ -105,16 +215,23 @@ export function OrderDetail() {
         </div>
 
         <Card title={`Tickets (${tickets.length})`}>
-          <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Value']}>
+          <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value']}>
             {tops.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-xs text-text3">
+                <td colSpan={7} className="px-3 py-10 text-center text-xs text-text3">
                   No tickets yet — click “+ Add ticket” to add items (Step 2).
                 </td>
               </tr>
             )}
             {tops.map((t) => (
-              <FragmentRow key={t.id} ticket={t} orderId={orderId} parts={t.type === 'COMP' ? partsOf(t.id) : []} />
+              <FragmentRow
+                key={t.id}
+                ticket={t}
+                orderId={orderId}
+                moulds={moulds ?? []}
+                now={now}
+                parts={t.type === 'COMP' ? partsOf(t.id) : []}
+              />
             ))}
           </Table>
         </Card>
@@ -130,12 +247,24 @@ export function OrderDetail() {
   );
 }
 
-function FragmentRow({ ticket, orderId, parts }: { ticket: Ticket; orderId: number; parts: Ticket[] }) {
+function FragmentRow({
+  ticket,
+  orderId,
+  moulds,
+  now,
+  parts,
+}: {
+  ticket: Ticket;
+  orderId: number;
+  moulds: { id: number; ref: string }[];
+  now: number;
+  parts: Ticket[];
+}) {
   return (
     <>
-      <TicketRow ticket={ticket} orderId={orderId} />
+      <TicketRow ticket={ticket} orderId={orderId} moulds={moulds} now={now} />
       {parts.map((p) => (
-        <TicketRow key={p.id} ticket={p} orderId={orderId} indent />
+        <TicketRow key={p.id} ticket={p} orderId={orderId} moulds={moulds} now={now} indent />
       ))}
     </>
   );

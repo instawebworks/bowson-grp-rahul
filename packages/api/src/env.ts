@@ -10,6 +10,15 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
+  // When true, all /api routes require a valid Supabase JWT. Off by default so
+  // the app runs without auth until users + JWT secret are configured.
+  AUTH_REQUIRED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // App role assumed when a logged-in user has no explicit role (in their JWT
+  // app_metadata or the users table). Keeps the first user from being locked out.
+  DEFAULT_ROLE: z.enum(['admin', 'manager', 'operative']).default('admin'),
   API_PORT: z.coerce.number().default(4000),
   API_HOST: z.string().default('0.0.0.0'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),

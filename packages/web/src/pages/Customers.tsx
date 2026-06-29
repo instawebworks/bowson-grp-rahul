@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useCustomers } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, QueryState, Table } from '../components/ui';
 import { CustomerForm } from '../components/CustomerForm';
+import { useAuth } from '../lib/auth';
 import type { Customer } from '../lib/types';
 
 export function Customers() {
@@ -9,6 +10,7 @@ export function Customers() {
   const rows = data ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
+  const { canManage } = useAuth();
 
   return (
     <>
@@ -17,7 +19,7 @@ export function Customers() {
       <PageHeader
         title="Customers"
         sub={`${rows.length} customer${rows.length === 1 ? '' : 's'}`}
-        actions={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New Customer</Button>}
+        actions={canManage ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ New Customer</Button> : undefined}
       />
       <Content>
         <Card>

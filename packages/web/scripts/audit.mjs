@@ -21,6 +21,8 @@ const routes = [
   ['catalogue', '/catalogue'],
   ['customers', '/customers'],
   ['operatives', '/operatives'],
+  ['audit', '/audit'],
+  ['search', '/search?q=DEMO'],
 ];
 
 const browser = await chromium.launch();
@@ -73,6 +75,11 @@ await page.goto(`${BASE}/orders`, { waitUntil: 'networkidle' });
 await page.locator('tbody tr').first().click();
 await page.waitForTimeout(600);
 await page.screenshot({ path: `${outDir}order-detail.png`, fullPage: true });
+await page.getByRole('button', { name: 'Edit order' }).click();
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${outDir}modal-edit-order.png` });
+await page.getByRole('button', { name: 'Cancel' }).click();
+await page.waitForTimeout(200);
 await page.getByRole('button', { name: '+ Add ticket' }).click();
 await page.waitForTimeout(400);
 await page.screenshot({ path: `${outDir}modal-add-ticket.png` });
@@ -85,6 +92,16 @@ await page.screenshot({ path: `${outDir}board-stage.png`, fullPage: true });
 await page.getByRole('button', { name: 'By operative' }).click();
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${outDir}board-ops.png`, fullPage: true });
+
+// Interaction: Mould planner tabs
+watch('mould-planner');
+await page.goto(`${BASE}/moulds`, { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Board', exact: true }).click();
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${outDir}mould-board.png`, fullPage: true });
+await page.getByRole('button', { name: 'Unassigned', exact: true }).click();
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${outDir}mould-unassigned.png`, fullPage: true });
 
 await browser.close();
 

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOrders } from '../lib/hooks';
+import { useAuth } from '../lib/auth';
 import { Button, Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
 import { OrderForm } from '../components/OrderForm';
 import { daysToDeadline, fmtDate, money } from '../lib/format';
+import { downloadCsv } from '../lib/csv';
 import type { Order } from '../lib/types';
 
 interface Props {
@@ -24,6 +26,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
   const rows = (data ?? []).filter((o) => !statuses || statuses.includes(o.status));
   const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
+  const { canManage } = useAuth();
 
   return (
     <>
@@ -31,7 +34,25 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
       <PageHeader
         title={title}
         sub={sub ?? `${rows.length} order${rows.length === 1 ? '' : 's'}`}
-        actions={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New Order</Button>}
+        actions={
+          <>
+            <Button
+              onClick={() =>
+                downloadCsv('orders.csv', [
+                  { key: 'orderNumber', label: 'Order #', value: (o) => o.orderNumber },
+                  { key: 'customer', label: 'Customer', value: (o) => o.customer?.name ?? '' },
+                  { key: 'site', label: 'Site', value: (o) => o.siteName ?? '' },
+                  { key: 'status', label: 'Status', value: (o) => o.status },
+                  { key: 'deadline', label: 'Deadline', value: (o) => o.deadline ?? '' },
+                  { key: 'value', label: 'Value', value: (o) => o.value },
+                ], rows)
+              }
+            >
+              ⭳ Export CSV
+            </Button>
+            {canManage && <Button variant="primary" onClick={() => setShowCreate(true)}>+ New Order</Button>}
+          </>
+        }
       />
       <Content>
         <Card>

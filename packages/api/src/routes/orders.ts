@@ -96,6 +96,10 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!existing) return reply.notFound('Order not found');
     unwrap(await db.from('orders').update(serializeOrder(data)).eq('id', id).select('id'));
+    // Target production week flows down to the order's tickets.
+    if (data.wc !== undefined) {
+      unwrap(await db.from('tickets').update({ wc: data.wc }).eq('orderId', id).is('deletedAt', null).select('id'));
+    }
     return unwrap(await db.from('orders').select(SELECT).eq('id', id).is('tickets.deletedAt', null).maybeSingle());
   });
 

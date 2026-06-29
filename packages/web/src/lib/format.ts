@@ -46,6 +46,25 @@ export function fmtElapsed(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/** Cure-timer state for a ticket given the current time, or null if no active timer. */
+export function cureState(
+  t: { cureStart: string | null; cureMins: number | null; cureCleared: boolean },
+  now: number,
+): { remainingMin: number; expired: boolean } | null {
+  if (!t.cureStart || t.cureMins == null || t.cureCleared) return null;
+  const elapsedMin = Math.floor((now - new Date(t.cureStart).getTime()) / 60000);
+  const remainingMin = t.cureMins - elapsedMin;
+  return { remainingMin: Math.max(0, remainingMin), expired: remainingMin <= 0 };
+}
+
+export function fmtCureMins(m: number): string {
+  if (m <= 0) return '0m';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}h${mm ? `${mm}m` : ''}`;
+}
+
 /** Initials from a name, e.g. "Mark Staniland" → "MS". */
 export function initials(name: string): string {
   return name

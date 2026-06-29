@@ -42,6 +42,7 @@ export const NAV: NavSection[] = [
     items: [
       { label: 'Customers', path: '/customers', icon: 'customers' },
       { label: 'Operatives & Settings', path: '/operatives', icon: 'operatives' },
+      { label: 'Activity Log', path: '/audit', icon: 'tickets' },
     ],
   },
 ];

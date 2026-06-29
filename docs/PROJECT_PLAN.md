@@ -136,9 +136,9 @@ GET    /api/audit
 | **1. Scaffold** | Monorepo, schema, server/UI shells, seed | Builds & typechecks green; nav + routes; seed data | ✅ Done |
 | **2. Core CRUD + read views** | Customers, Operatives, Moulds, Catalogue; Orders/Tickets read APIs | Dashboard, All Orders, All Tickets + all admin views live; customer add/edit; order create | ✅ Done |
 | **3. Workflow engine** | 11-stage state machine, COMP/PART roll-ups, progress %, order-status derivation, ticket adding (Step 2), status changes, audit log | Domain module + workflow endpoints + order detail page with add-ticket & status controls | ✅ Done |
-| **4. Kanban + real-time** | T-Card board (by-stage / by-operative), drag-drop → status/assign, per-operative time tracking, live polling | Working T-Card board ✅. Remaining: cure timers, mould auto-advance, capacity math, true Realtime (→ Phase 6 w/ RLS) | 🟡 Core done |
-| **5. Planning + extras** | Schedule view, mould planner (5 tabs), CSV import/export, audit log UI, global search | Feature-complete vs prototype | Planned |
-| **6. Auth/roles + deploy** | Supabase Auth, RLS policies, role gating, hosting & CI | Production deployment | Planned |
+| **4. Kanban + real-time** | T-Card board (by-stage / by-operative), drag-drop → status/assign, time tracking, mould assignment + auto-advance, gel-coat cure timers, live polling | Board + mould auto-advance + cure timers ✅. Remaining: capacity math, true Realtime (→ Phase 6 w/ RLS) | 🟢 Done (Realtime → P6) |
+| **5. Planning + extras** | Global search, activity/audit log, operatives & moulds add/edit, schedule + capacity, order edit, mould planner (register/board/unassigned), CSV import/export | Feature-complete vs prototype | ✅ Done |
+| **6. Auth/roles + deploy** | Supabase Auth (env-gated login + JWT enforcement), RLS policies, **true Realtime board**, role gating (admin/manager/operative) ✅. Remaining: hosting & CI | Production deployment | 🟡 Deploy left |
 
 ---
 

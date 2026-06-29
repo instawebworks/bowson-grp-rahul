@@ -11,13 +11,14 @@ import {
 import { LIVE_STATUSES, STAGE_SHORT } from '@bowson/shared';
 import {
   useAssignTicket,
+  useBoardRealtime,
   useBoardStatusChange,
   useBoardTickets,
   useOperatives,
   useToggleTimer,
 } from '../lib/hooks';
 import { Content, PageHeader, ProgressBar } from '../components/ui';
-import { fmtElapsed, initials, statusStyle } from '../lib/format';
+import { cureState, fmtCureMins, fmtElapsed, initials, statusStyle } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
 
 type View = 'stage' | 'ops';
@@ -37,6 +38,7 @@ export function Board() {
   const changeStatus = useBoardStatusChange();
   const assign = useAssignTicket();
   const toggleTimer = useToggleTimer();
+  useBoardRealtime();
   const [view, setView] = useState<View>('stage');
 
   // 1-second clock so running timers tick live.
@@ -91,7 +93,7 @@ export function Board() {
         {isLoading && <div className="text-xs text-text3">Loading…</div>}
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           {view === 'stage' ? (
-            <StageView tickets={live} />
+            <StageView tickets={live} now={now} />
           ) : (
             <OpsView tickets={live} operatives={operatives ?? []} now={now} onTimer={toggleTimer.mutate} />
           )}
@@ -102,7 +104,7 @@ export function Board() {
 }
 
 // ─── By stage ────────────────────────────────────────────────────────────────
-function StageView({ tickets }: { tickets: Ticket[] }) {
+function StageView({ tickets, now }: { tickets: Ticket[]; now: number }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {LIVE_STATUSES.map((stage, i) => {
@@ -110,7 +112,7 @@ function StageView({ tickets }: { tickets: Ticket[] }) {
         return (
           <Column key={stage} id={`stage:${stage}`} title={STAGE_SHORT[i] ?? stage} count={cards.length} accent={statusStyle(stage).color}>
             {cards.map((t) => (
-              <Card key={t.id} ticket={t} />
+              <Card key={t.id} ticket={t} now={now} />
             ))}
           </Column>
         );
@@ -226,6 +228,19 @@ function Card({
       </div>
       <div className="mb-1.5 line-clamp-2 text-[11px] font-medium leading-snug">{ticket.detail}</div>
       <ProgressBar pct={ticket.pct} />
+      {(() => {
+        const cure = now ? cureState(ticket, now) : null;
+        if (!cure) return null;
+        return (
+          <div
+            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+              cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'
+            }`}
+          >
+            {cure.expired ? '✓ cure done' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
+          </div>
+        );
+      })()}
       <div className="mt-1.5 flex items-center justify-between">
         <div className="flex gap-0.5">
           {names.slice(0, 3).map((n) => (

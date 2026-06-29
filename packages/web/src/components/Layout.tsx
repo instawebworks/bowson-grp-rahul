@@ -1,7 +1,30 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { NAV } from '../nav';
 import { NavIcon } from './icons';
+import { useAuth } from '../lib/auth';
 import logoUrl from '../assets/bowson-logo.jpg';
+
+function SidebarSearch() {
+  const [q, setQ] = useState('');
+  const navigate = useNavigate();
+  return (
+    <form
+      className="px-2.5 pt-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (q.trim()) navigate(`/search?q=${encodeURIComponent(q.trim())}`);
+      }}
+    >
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search…"
+        className="w-full rounded-md border border-border2 bg-surface2 px-2.5 py-1.5 text-xs outline-none focus:border-teal"
+      />
+    </form>
+  );
+}
 
 export function Layout() {
   return (
@@ -11,6 +34,8 @@ export function Layout() {
         <div className="border-b border-border px-3.5 py-2.5">
           <img src={logoUrl} alt="Bowson GRP" className="block h-auto w-full max-w-40" />
         </div>
+
+        <SidebarSearch />
 
         <nav className="flex-1 overflow-y-auto px-1.5 py-2">
           {NAV.map((section) => (
@@ -40,15 +65,34 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="border-t border-border px-4 py-2.5 text-[10px] leading-relaxed text-text3">
-          Bowson GRP · rebuild
-        </div>
+        <SidebarFooter />
       </aside>
 
       {/* Main */}
       <main className="flex min-w-0 flex-col">
         <Outlet />
       </main>
+    </div>
+  );
+}
+
+function SidebarFooter() {
+  const { session, signOut } = useAuth();
+  if (session) {
+    return (
+      <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
+        <span className="truncate text-[10px] text-text3" title={session.user.email ?? ''}>
+          {session.user.email}
+        </span>
+        <button onClick={() => void signOut()} className="shrink-0 text-[10px] font-semibold text-teal hover:underline">
+          Sign out
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="border-t border-border px-4 py-2.5 text-[10px] leading-relaxed text-text3">
+      Bowson GRP · rebuild
     </div>
   );
 }
