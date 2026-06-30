@@ -8,7 +8,7 @@
     "dev": "pnpm --parallel --filter \"./packages/*\" dev",
     "dev:api": "pnpm --filter @bowson/api dev",
     "dev:web": "pnpm --filter @bowson/web dev",
-    "build": "pnpm --filter @bowson/shared build && pnpm --filter @bowson/api build && pnpm --filter @bowson/web build",
+    "build": "pnpm --filter @bowson/shared build && pnpm --filter @bowson/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint"
   },

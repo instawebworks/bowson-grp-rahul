@@ -392,3 +392,27 @@ library changed.
 
 **Phase 6 status:** auth, Realtime, and role gating complete. **Remaining: deployment**
 (host the web app + API; Supabase is already live self-hosted).
+
+## 2026-06-27 — Phase 6 (part 3): deployment artifacts
+
+**Done**
+- **API runs via `tsx` in prod** (monorepo-safe: consumes `@bowson/shared` from
+  source, no bundling). `start` → `tsx src/index.ts`; moved `tsx` to dependencies;
+  dropped the dead `node dist` build from the root build chain.
+- **`Dockerfile.api`** — pnpm workspace install (`--filter @bowson/api...`) + run.
+- **`Dockerfile.web`** — `vite build` with `VITE_*` build args → static files served
+  by **nginx** (`packages/web/nginx.conf`, SPA fallback + asset caching).
+- **`.dockerignore`**, **`docker-compose.yml`** (both services, reads root `.env`),
+  and **`docs/DEPLOY.md`** — Coolify guide (two resources, env vars, build args,
+  `/health` check) + compose option + auth-enable steps.
+
+**Verified (Docker not installed locally)**
+- Web production build succeeds (185 KB gzip). API prod `start` (tsx) boots on a
+  spare port and `/health` returns `db: ok`. Lockfile up to date (frozen install
+  will pass in Docker).
+
+**Project status: feature-complete + deployable.** Remaining are enhancements, not
+parity gaps:
+- Catalogue management UI; CSV import for orders/tickets.
+- Operative day-availability patterns; bulk/multi-assign actions.
+- Automated test suite; theme images → Supabase Storage.

@@ -1,0 +1,17 @@
+# Bowson GRP — API (Fastify). Runs via tsx so the @bowson/shared workspace
+# package is consumed from source (no separate build step needed).
+FROM node:20-slim
+
+ENV CI=true
+ENV NODE_ENV=production
+RUN corepack enable
+
+WORKDIR /app
+
+# Copy the workspace and install only the API + its deps (incl. @bowson/shared).
+COPY . .
+RUN pnpm install --frozen-lockfile --filter @bowson/api...
+
+EXPOSE 4000
+# API_HOST/API_PORT come from the environment (.env or platform config).
+CMD ["pnpm", "--filter", "@bowson/api", "start"]
