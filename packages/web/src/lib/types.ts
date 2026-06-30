@@ -120,20 +120,30 @@ export interface Order {
 }
 
 export interface DashboardData {
-  orders: {
-    total: number;
-    pending: number;
-    inProgress: number;
-    readyToDespatch: number;
-    despatched: number;
-    overdue: number;
+  orders: { active: number; pending: number; overdue: number };
+  tickets: { slidesInProduction: number; partsInProduction: number; manHours: number };
+  moulds: { total: number; inUse: number; maintenance: number; utilisation: number };
+  capacity: {
+    weeklyCapacity: number;
+    committed8: number;
+    totalCapacity8: number;
+    utilisation8: number;
+    leadTimeWeeks: number | null;
   };
-  moulds: {
-    total: number;
-    inUse: number;
-    available: number;
-    maintenance: number;
-    utilisation: number;
+  recentOrders: {
+    id: number;
+    orderNumber: string;
+    status: string;
+    deadline: string | null;
+    customer: string | null;
+    items: number;
+    progress: number;
+  }[];
+  hoursByStage: { stage: string; hrs: number }[];
+  stageCapacity: {
+    thisWeek: { stage: string; trained: number; available: number }[];
+    nextWeek: { stage: string; trained: number; available: number }[];
   };
-  tickets: { live: number; preProduction: number };
+  thisWeek: string;
+  nextWeek: string;
 }

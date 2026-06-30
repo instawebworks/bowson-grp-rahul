@@ -45,6 +45,19 @@ export function useUpdateOrder(orderId: number) {
   });
 }
 
+/** Quick order status change (inline dropdown on the Orders list). */
+export function useSetOrderStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiClient.patch(`/api/orders/${id}`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export interface ScheduleWeek {
   key: string;
   wc: string;

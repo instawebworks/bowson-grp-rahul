@@ -416,3 +416,60 @@ parity gaps:
 - Catalogue management UI; CSV import for orders/tickets.
 - Operative day-availability patterns; bulk/multi-assign actions.
 - Automated test suite; theme images → Supabase Storage.
+
+## 2026-06-27 — Dashboard parity + global top bar
+
+**Done**
+- **Global TopBar** (in the app layout): global search ("Ticket # or order / site…"),
+  **Import CSV**, **+ Ticket**, **+ Order**, and a "✓ Saved" indicator. Buttons are
+  role-gated (hidden for operatives). Moved search out of the sidebar into the top bar;
+  made `PageHeader` non-sticky so it doesn't clash with the sticky top bar.
+  - **+ Order** → OrderForm. **+ Ticket** → pick an order, then AddTicketModal.
+  - **Import CSV** → bulk-create orders from CSV (orderNumber required; site/despatch/
+    resin/notes optional).
+- **Rich Dashboard** rebuilt to match the prototype:
+  - 6 metric cards: Active Orders, Orders Pending, Slides in Production, Parts in
+    Production, Moulds in Use, Total Man Hours.
+  - Recent Orders table + Hours Remaining by Stage.
+  - 8-Week Capacity Summary + Current Lead Time (Slides).
+  - Production Capacity — Next 8 Weeks grid; Stage Capacity (this/next week, per skill).
+- **Enriched `/api/dashboard`** to back all of the above (man-hours via
+  `STAGE_HRS_REMAINING`, slides/parts-in-production, recent orders w/ progress,
+  hours-by-stage, 8-week committed vs capacity + lead time, stage capacity by skill).
+
+**Features added / modified**
+- Global create/import actions everywhere (top bar) + a production-overview Dashboard
+  matching the original prototype.
+
+**Verified**
+- Dashboard renders all sections correctly (screenshot matches prototype); Playwright
+  audit clean; all packages typecheck. Note: Stage Capacity shows 0/0 until operatives
+  have skills assigned (expected — same as prototype).
+
+**Remaining (enhancements):** orders↔tickets full CSV import, catalogue management UI,
+operative day-availability patterns, bulk/multi-assign, automated tests, theme images
+→ Storage.
+
+## 2026-06-27 — View parity pass (match prototype sections)
+
+Matched the remaining views to the t-card.html prototype (after the Dashboard):
+- **All Orders** — columns Order # (+overdue tag), Customer, Customer Ref, Items
+  summary, **inline status dropdown** (Pending/In Progress), Progress, Deadline,
+  Value, View; search + status filter + "show completed & despatched" + pagination (15/pg).
+- **All Tickets** — columns T/Card # (PART rows indented "↳"), Type badge, Order,
+  Customer, Customer Ref, Detail (+ M2 resin badge), Stage, Progress, Deadline, Hrs;
+  search + stage filter + show-despatched; COMP→PART grouping.
+- **In Production / Ready to Despatch** — now **ticket-level** views (In Production =
+  all live GRP stages; Ready = "10. Ready to Despatch"). Despatched stays order-level.
+- **Customers** — **card grid** (name, contact, region, N orders) → click to edit.
+- **Product Catalogue** — **table** (Code, Product, SKU, Type, Parts, Hours, Sell
+  Price) + click-through **detail modal** (parts + hardware).
+- **Operatives** — **card grid** (avatar initials, hrs/day + standard week, skill
+  chips, day-pattern row when set) → click to edit.
+
+**Verified:** all packages typecheck; Playwright audit clean across every route;
+screenshots match the prototype layout.
+
+**Still simplified vs prototype (future):** Ready-to-Despatch blocked-assemblies
+sub-tables, ticket-detail time-tracking/audit sections, operative day-pattern editor
+& stage-weight settings, catalogue create/edit form, orders↔tickets CSV import.

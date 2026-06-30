@@ -3,7 +3,7 @@ import { statusStyle } from '../lib/format';
 
 export function PageHeader({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
   return (
-    <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-border bg-surface px-5 py-2.5">
+    <header className="flex items-center gap-3 border-b border-border bg-surface px-5 py-2.5">
       <div>
         <div className="text-sm font-bold tracking-tight">{title}</div>
         {sub && <div className="text-[11px] text-text3">{sub}</div>}
