@@ -20,7 +20,7 @@ Supabase Realtime directly.
 
 ## Packages
 
-``
+```
 packages/
 ├─ shared/ # Zod schemas, shared TS types, domain constants (stages, %, capacity)
 ├─ api/ # Fastify server, Supabase data client, REST routes, domain services
@@ -29,7 +29,7 @@ supabase/
 ├─ schema.sql # run once in the Supabase SQL Editor to create the tables
 └─ seed.sql # run after schema.sql to load operatives + catalogue + demo data
 
-````
+```
 
 ## Getting started
 
@@ -49,7 +49,7 @@ cp .env.example .env
 
 # 4. Run everything
 pnpm dev            # api on :4000, web on :5173
-````
+```
 
 ## The domain (ported 1:1 from `t-card.html`)
 
