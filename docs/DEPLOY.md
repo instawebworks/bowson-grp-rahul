@@ -62,6 +62,46 @@ To enable auth later, also run `supabase/rls.sql`.
 
 ---
 
+## Option C — Vercel (web + API as one project)
+
+The whole app runs on Vercel: the React app as static files, the Fastify API as a
+**serverless function** (`api/[...path].ts` mounts the app for every `/api/*` route).
+Supabase stays on Coolify.
+
+Config lives in **`vercel.json`** (build the web → `packages/web/dist`, SPA
+rewrites, and the function).
+
+**Setup:**
+1. Import the repo in Vercel (root directory = repo root; it auto-detects pnpm).
+2. **Environment variables** (Project → Settings → Environment Variables):
+   ```
+   # Server (function) — runtime
+   SUPABASE_URL=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   SUPABASE_ANON_KEY=...
+   SUPABASE_JWT_SECRET=...
+   AUTH_REQUIRED=true
+   DEFAULT_ROLE=admin
+   # Web (build-time, baked into the bundle)
+   VITE_API_URL=            # leave EMPTY — web calls same-origin /api
+   VITE_SUPABASE_URL=...
+   VITE_SUPABASE_ANON_KEY=...
+   VITE_REQUIRE_AUTH=true
+   ```
+   > Web + API share the Vercel domain, so `/api/*` is same-origin — leave
+   > `VITE_API_URL` empty (the client defaults to relative `/api`). No CORS needed.
+3. Deploy. Routes: `/api/*` → the function; everything else → the SPA.
+4. One-time: run `pnpm --filter @bowson/api db:setup` and `create-user` locally
+   (they need `DATABASE_URL` / Supabase keys in your local `.env`).
+
+**Notes / caveats:**
+- The API runs **serverless** on Vercel (cold starts; each request builds/reuses a
+  warm Fastify instance). Fine for this workload. The Docker/Coolify option runs it
+  as a persistent server if you prefer.
+- `VITE_API_URL` empty → `api.ts` falls back to `http://localhost:4000` in dev and
+  to relative `/api` in production builds (set it to `/` if you prefer explicit).
+- Health: `/api/health` is open (unauthenticated) for uptime checks.
+
 ## Option B — docker-compose (single host / local prod test)
 
 ```bash

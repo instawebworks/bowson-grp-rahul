@@ -491,3 +491,26 @@ Dashboard with full access; sidebar shows the user + Sign out. No page errors.
 **Note:** auth flags live in `.env` (gitignored) — on a fresh deploy set
 `AUTH_REQUIRED`/`VITE_REQUIRE_AUTH` and run `create-user`. To add more users (and
 roles manager/operative), run create-user with overrides or set `app_metadata.role`.
+
+## 2026-06-27 — Vercel deploy (web + serverless API)
+
+Made the app deployable to **Vercel as a single project** (frontend static + API
+as a serverless function); Docker/Coolify path kept intact.
+
+- **API refactor:** `src/index.ts` is now side-effect-free (exports `buildServer`
+  only); new `src/server.ts` is the standalone listen entry (Docker/local `start`
+  + `dev`). Added an open `/api/health` alias; health stays unauthenticated.
+- **Vercel function** `api/[...path].ts` — builds the Fastify app once per warm
+  instance and emits each `/api/*` request into it.
+- **`vercel.json`** — installs the workspace, builds the web (`packages/web/dist`),
+  routes `/api/*` to the function, SPA-rewrites everything else.
+- **Same-origin API:** `api.ts` now defaults to a relative `/api` when
+  `VITE_API_URL` is unset (Vercel), so no CORS; dev still uses `.env`’s localhost.
+- **docs/DEPLOY.md** — added the Vercel "everything on Vercel" guide (env vars,
+  empty `VITE_API_URL`, one-time db:setup/create-user, caveats).
+
+**Verified locally:** all packages typecheck; web prod build OK; API boots via
+`server.ts` (`/health` + open `/api/health` return db ok; `/api/*` still 401 without
+a token). **Not validated on Vercel itself** (no Vercel CLI here) — the serverless
+bundling of the Fastify app + workspace `@bowson/shared` should be confirmed on the
+first Vercel deploy.

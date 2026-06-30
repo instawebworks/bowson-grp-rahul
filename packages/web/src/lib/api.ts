@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// Empty/unset → same-origin relative "/api/…" (Vercel single-project deploy).
+// In dev, .env sets VITE_API_URL=http://localhost:4000.
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 async function authHeader(): Promise<Record<string, string>> {
   if (!supabase) return {};

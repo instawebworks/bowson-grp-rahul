@@ -34,6 +34,7 @@ export async function buildServer() {
   app.addHook('onRequest', async (req, reply) => {
     if (!env.AUTH_REQUIRED) return;
     if (req.method === 'OPTIONS' || !req.url.startsWith('/api')) return;
+    if (req.url.startsWith('/api/health')) return; // health check stays open
     await authenticate(req, reply);
   });
 
@@ -50,7 +51,7 @@ export async function buildServer() {
     }
   });
 
-  app.get('/health', async () => {
+  const health = async () => {
     let dbStatus = 'unknown';
     let dbMessage: string | undefined;
     try {
@@ -66,7 +67,9 @@ export async function buildServer() {
       dbMessage = (e as Error).message;
     }
     return { status: 'ok', db: dbStatus, dbMessage, env: env.NODE_ENV };
-  });
+  };
+  app.get('/health', health);
+  app.get('/api/health', health); // reachable when the app is mounted under /api (Vercel)
 
   // Feature routes
   await app.register(dashboardRoutes, { prefix: '/api/dashboard' });
@@ -82,22 +85,3 @@ export async function buildServer() {
 
   return app;
 }
-
-async function main() {
-  const app = await buildServer();
-  try {
-    await app.listen({ port: env.API_PORT, host: env.API_HOST });
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-
-  const shutdown = async () => {
-    await app.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-main();
