@@ -473,3 +473,21 @@ screenshots match the prototype layout.
 **Still simplified vs prototype (future):** Ready-to-Despatch blocked-assemblies
 sub-tables, ticket-detail time-tracking/audit sections, operative day-pattern editor
 & stage-weight settings, catalogue create/edit form, orders↔tickets CSV import.
+
+## 2026-06-27 — Sign-in enabled (initial login page)
+
+- Turned auth ON: `.env` now has `AUTH_REQUIRED=true` + `VITE_REQUIRE_AUTH=true`
+  (SUPABASE_JWT_SECRET was already set), so the app opens on the **sign-in page**.
+- **Login by username** — the Login page takes a username that maps to a Supabase
+  email (`admin` → `admin@bowson.local`); `EMAIL_DOMAIN` configurable.
+- **Seed user script** `pnpm --filter @bowson/api create-user` (service-role;
+  `SEED_ADMIN_EMAIL/PASSWORD/ROLE` env overrides). Created the initial admin:
+  **username `admin` / password `admin123`** with `app_metadata.role = admin`.
+
+**Verified end-to-end:** unauthenticated `/api/orders` → 401; signing in as
+admin/admin123 returns a token the API accepts (200); the browser flow lands on the
+Dashboard with full access; sidebar shows the user + Sign out. No page errors.
+
+**Note:** auth flags live in `.env` (gitignored) — on a fresh deploy set
+`AUTH_REQUIRED`/`VITE_REQUIRE_AUTH` and run `create-user`. To add more users (and
+roles manager/operative), run create-user with overrides or set `app_metadata.role`.

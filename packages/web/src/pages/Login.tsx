@@ -3,9 +3,13 @@ import { useAuth } from '../lib/auth';
 import { Button, inputClass } from '../components/ui';
 import logoUrl from '../assets/bowson-logo.jpg';
 
+/** Internal users sign in with a username; it maps to a Supabase email. */
+const EMAIL_DOMAIN = 'bowson.local';
+const toEmail = (u: string) => (u.includes('@') ? u.trim() : `${u.trim().toLowerCase()}@${EMAIL_DOMAIN}`);
+
 export function Login() {
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -14,7 +18,7 @@ export function Login() {
     e.preventDefault();
     setError(null);
     setBusy(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(toEmail(username), password);
     setBusy(false);
     if (error) setError(error);
   }
@@ -25,8 +29,8 @@ export function Login() {
         <img src={logoUrl} alt="Bowson GRP" className="mx-auto mb-5 h-auto w-40" />
         <div className="mb-4 text-center text-sm font-bold">Sign in</div>
         <label className="mb-3 block">
-          <span className="mb-1 block text-[11px] font-semibold text-text2">Email</span>
-          <input type="email" className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+          <span className="mb-1 block text-[11px] font-semibold text-text2">Username</span>
+          <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" autoFocus autoCapitalize="none" />
         </label>
         <label className="mb-4 block">
           <span className="mb-1 block text-[11px] font-semibold text-text2">Password</span>
