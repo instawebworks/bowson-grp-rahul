@@ -2,7 +2,6 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { NAV } from '../nav';
 import { NavIcon } from './icons';
 import { useAuth } from '../lib/auth';
-import { TopBar } from './TopBar';
 import logoUrl from '../assets/bowson-logo.jpg';
 
 export function Layout() {
@@ -47,7 +46,6 @@ export function Layout() {
 
       {/* Main */}
       <main className="flex min-w-0 flex-col">
-        <TopBar />
         <Outlet />
       </main>
     </div>

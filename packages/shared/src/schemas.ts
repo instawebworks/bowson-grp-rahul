@@ -106,6 +106,11 @@ export const catalogueInputSchema = z.object({
   code: z.string().nullish(),
   drawing: z.string().nullish(),
   unitPrice: z.number().nonnegative().default(0),
+  singlePiece: z.boolean().default(false),
+  assemblyHrs: z.number().nonnegative().default(0),
+  gelCureMins: z.number().int().nonnegative().nullish(),
+  lamCureMins: z.number().int().nonnegative().nullish(),
+  specUrl: z.string().nullish(),
   parts: z.array(cataloguePartInputSchema).default([]),
   hardware: z.array(catalogueHardwareInputSchema).default([]),
 });

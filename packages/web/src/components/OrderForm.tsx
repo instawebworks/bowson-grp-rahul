@@ -1,14 +1,18 @@
 import { useRef, useState } from 'react';
 import { DESPATCH } from '@bowson/shared';
-import { useCreateOrder, useCustomers, type CreateOrderInput } from '../lib/hooks';
-import type { Customer } from '../lib/types';
+import { useCreateOrder, useCustomers, useDeleteOrder, type CreateOrderInput } from '../lib/hooks';
+import type { Customer, Order } from '../lib/types';
 import { Button, Field, FormSection, Modal, inputClass } from './ui';
 import { CustomerForm } from './CustomerForm';
+import { OrderStep2 } from './OrderStep2';
 
 export function OrderForm({ onClose }: { onClose: () => void }) {
   const { data: customers } = useCustomers();
   const create = useCreateOrder();
+  const deleteOrder = useDeleteOrder();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [created, setCreated] = useState<Order | null>(null);
+  const [showAbandon, setShowAbandon] = useState(false);
 
   const [form, setForm] = useState<CreateOrderInput & { themeImage?: string | null }>({
     orderNumber: '',
@@ -48,16 +52,54 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
       return;
     }
     try {
-      await create.mutateAsync({
+      const order = await create.mutateAsync({
         ...form,
         siteName: form.siteName || null,
         notes: form.notes || null,
         themeImage: form.themeImage || null,
       });
-      onClose();
+      setCreated(order); // move to Step 2 (add tickets)
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  // ── Step 2 — add tickets to the created order ──
+  if (created) {
+    return (
+      <>
+        <Modal
+          title="New Order — Step 2 of 2"
+          sub={`Order ${created.orderNumber} · Add tickets`}
+          onClose={onClose}
+          onX={() => setShowAbandon(true)}
+          footer={<Button variant="primary" onClick={onClose}>Done</Button>}
+        >
+          <OrderStep2 orderId={created.id} orderNumber={created.orderNumber} resin={created.resinType} onDone={onClose} />
+        </Modal>
+        {showAbandon && (
+          <Modal
+            title="Abandon this order?"
+            onClose={() => setShowAbandon(false)}
+            width="max-w-sm"
+            footer={
+              <>
+                <Button onClick={() => setShowAbandon(false)}>Keep editing</Button>
+                <Button
+                  variant="danger"
+                  disabled={deleteOrder.isPending}
+                  onClick={async () => { await deleteOrder.mutateAsync(created.id); onClose(); }}
+                >
+                  {deleteOrder.isPending ? 'Removing…' : 'Yes — abandon'}
+                </Button>
+              </>
+            }
+          >
+            <p className="text-xs text-text2">The order and any tickets added will be permanently removed.</p>
+          </Modal>
+        )}
+      </>
+    );
   }
 
   return (

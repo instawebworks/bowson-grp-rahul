@@ -1,14 +1,28 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { statusStyle } from '../lib/format';
+import { GlobalBar } from './GlobalBar';
 
-export function PageHeader({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  sub,
+  actions,
+  globalActions = true,
+}: {
+  title: string;
+  sub?: string;
+  actions?: ReactNode;
+  globalActions?: boolean;
+}) {
   return (
-    <header className="flex items-center gap-3 border-b border-border bg-surface px-5 py-2.5">
+    <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-border bg-surface px-5 py-2">
       <div>
         <div className="text-sm font-bold tracking-tight">{title}</div>
         {sub && <div className="text-[11px] text-text3">{sub}</div>}
       </div>
-      {actions && <div className="ml-auto flex items-center gap-1.5">{actions}</div>}
+      <div className="ml-auto flex items-center gap-2">
+        {actions && <div className="flex items-center gap-1.5">{actions}</div>}
+        <GlobalBar actions={globalActions} />
+      </div>
     </header>
   );
 }
@@ -147,6 +161,7 @@ export function Modal({
   title,
   sub,
   onClose,
+  onX,
   children,
   footer,
   width = 'max-w-xl',
@@ -154,6 +169,8 @@ export function Modal({
   title: string;
   sub?: string;
   onClose: () => void;
+  /** Optional distinct handler for the ✕ button (defaults to onClose). */
+  onX?: () => void;
   children: ReactNode;
   footer?: ReactNode;
   width?: string;
@@ -172,7 +189,7 @@ export function Modal({
             <div className="text-sm font-bold">{title}</div>
             {sub && <div className="text-[11px] text-text3">{sub}</div>}
           </div>
-          <button onClick={onClose} className="text-text3 hover:text-text" aria-label="Close">✕</button>
+          <button onClick={onX ?? onClose} className="text-text3 hover:text-text" aria-label="Close">✕</button>
         </div>
         <div className="p-4">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">{footer}</div>}

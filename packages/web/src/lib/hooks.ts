@@ -46,6 +46,17 @@ export function useUpdateOrder(orderId: number) {
 }
 
 /** Quick order status change (inline dropdown on the Orders list). */
+export function useDeleteOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.del(`/api/orders/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export function useSetOrderStatus() {
   const qc = useQueryClient();
   return useMutation({
@@ -84,6 +95,47 @@ export function useOrder(id: number | undefined) {
   });
 }
 
+export function useTicket(id: number | undefined) {
+  return useQuery({
+    queryKey: ['ticket', id],
+    queryFn: () => apiClient.get<Ticket>(`/api/tickets/${id}`),
+    enabled: id != null,
+  });
+}
+
+export function useAuditFor(entityType: string, entityId: number | undefined) {
+  return useQuery({
+    queryKey: ['audit', entityType, entityId],
+    queryFn: () => apiClient.get<AuditEntry[]>(`/api/audit?entityType=${entityType}&entityId=${entityId}`),
+    enabled: entityId != null,
+  });
+}
+
+export function useOrderAudit(orderId: number | undefined) {
+  return useQuery({
+    queryKey: ['audit', 'order-full', orderId],
+    queryFn: () => apiClient.get<AuditEntry[]>(`/api/audit?orderId=${orderId}`),
+    enabled: orderId != null,
+  });
+}
+
+export function useUpdateCatalogue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: CatalogueFormInput }) =>
+      apiClient.patch<Catalogue>(`/api/catalogue/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['catalogue'] }),
+  });
+}
+
+export function useDeleteCatalogue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.del(`/api/catalogue/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['catalogue'] }),
+  });
+}
+
 export interface AddTicketInput {
   fromCatalogueId?: number;
   colour?: string;
@@ -91,10 +143,13 @@ export interface AddTicketInput {
   type?: string;
   detail?: string;
   spec?: string | null;
+  drawing?: string | null;
   qty?: number;
   unitPrice?: number;
   hrs?: number;
   resinType?: string | null;
+  themeImage?: string | null;
+  status?: string;
 }
 
 export function useAddTicket(orderId: number) {
@@ -110,10 +165,24 @@ export function useAddTicket(orderId: number) {
   });
 }
 
+export function useDeleteTicket(orderId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: number) => apiClient.del(`/api/tickets/${ticketId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 function invalidateTicketViews(qc: ReturnType<typeof useQueryClient>, orderId?: number) {
   if (orderId != null) qc.invalidateQueries({ queryKey: ['order', orderId] });
   qc.invalidateQueries({ queryKey: ['orders'] });
   qc.invalidateQueries({ queryKey: ['tickets'] });
+  qc.invalidateQueries({ queryKey: ['ticket'] });
   qc.invalidateQueries({ queryKey: ['board-tickets'] });
   qc.invalidateQueries({ queryKey: ['moulds'] });
   qc.invalidateQueries({ queryKey: ['dashboard'] });
@@ -154,6 +223,7 @@ export function useChangeTicketStatus(orderId?: number) {
       if (orderId != null) qc.invalidateQueries({ queryKey: ['order', orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['ticket'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
@@ -203,6 +273,7 @@ export function useBoardRealtime() {
 function invalidateBoard(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['board-tickets'] });
   qc.invalidateQueries({ queryKey: ['tickets'] });
+  qc.invalidateQueries({ queryKey: ['ticket'] });
   qc.invalidateQueries({ queryKey: ['orders'] });
   qc.invalidateQueries({ queryKey: ['dashboard'] });
 }
@@ -251,6 +322,7 @@ export interface OperativeFormInput {
   name: string;
   skills: string[];
   defaultHrs?: number | null;
+  dayPattern?: number[];
 }
 
 export function useCreateOperative() {
@@ -328,6 +400,29 @@ export function useAudit() {
 
 export function useCatalogue() {
   return useQuery({ queryKey: ['catalogue'], queryFn: () => apiClient.get<Catalogue[]>('/api/catalogue') });
+}
+
+export interface CataloguePartInput { detail: string; drawing?: string | null; hrs?: number; price?: number; mouldId?: number | null }
+export interface CatalogueFormInput {
+  productCode: string;
+  name: string;
+  code?: string | null;
+  unitPrice?: number;
+  singlePiece?: boolean;
+  assemblyHrs?: number;
+  gelCureMins?: number | null;
+  lamCureMins?: number | null;
+  specUrl?: string | null;
+  parts?: CataloguePartInput[];
+  hardware?: { name: string; qty: number }[];
+}
+
+export function useCreateCatalogue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CatalogueFormInput) => apiClient.post<Catalogue>('/api/catalogue', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['catalogue'] }),
+  });
 }
 
 // ─── Mutations ───────────────────────────────────────────────────────────────

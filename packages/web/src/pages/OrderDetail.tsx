@@ -7,6 +7,7 @@ import {
   useConfirmCure,
   useMoulds,
   useOrder,
+  useOrderAudit,
   useSetCure,
 } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
@@ -242,6 +243,8 @@ export function OrderDetail() {
             <img src={order.themeImage} alt="Colour theme" className="max-h-56 rounded-lg border border-border" />
           </div>
         )}
+
+        <OrderAudit orderId={orderId} />
       </Content>
     </>
   );
@@ -267,6 +270,35 @@ function FragmentRow({
         <TicketRow key={p.id} ticket={p} orderId={orderId} moulds={moulds} now={now} indent />
       ))}
     </>
+  );
+}
+
+function OrderAudit({ orderId }: { orderId: number }) {
+  const { data } = useOrderAudit(orderId);
+  if (!data || data.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Activity</div>
+      <div className="space-y-1">
+        {data.map((a) => (
+          <div key={a.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="whitespace-nowrap text-text3">
+              {new Date(a.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="capitalize text-text3">{a.entityType} #{a.entityId}</span>
+            <span className="text-text2">{a.field}</span>
+            {a.field === 'status' && a.toValue ? (
+              <span className="flex items-center gap-1">
+                {a.fromValue && <StatusPill status={a.fromValue} />}→<StatusPill status={a.toValue} />
+              </span>
+            ) : (
+              <span className="text-text2">{a.fromValue ?? '—'} → {a.toValue ?? '—'}</span>
+            )}
+            {a.note && <span className="text-text3">· {a.note}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

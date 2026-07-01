@@ -149,6 +149,11 @@ create table "catalogue" (
   "code"        text,
   "drawing"     text,
   "unitPrice"   double precision not null default 0,
+  "singlePiece" boolean not null default false,
+  "assemblyHrs" double precision not null default 0,
+  "gelCureMins" integer,
+  "lamCureMins" integer,
+  "specUrl"     text,
   "createdAt"   timestamptz not null default now(),
   "updatedAt"   timestamptz not null default now(),
   "deletedAt"   timestamptz

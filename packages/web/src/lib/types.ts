@@ -51,6 +51,11 @@ export interface Catalogue {
   code: string | null;
   drawing: string | null;
   unitPrice: number;
+  singlePiece: boolean;
+  assemblyHrs: number;
+  gelCureMins: number | null;
+  lamCureMins: number | null;
+  specUrl: string | null;
   parts: CataloguePart[];
   hardware: CatalogueHardware[];
 }
@@ -97,6 +102,7 @@ export interface Ticket {
   completed: string | null;
   assignments?: TicketAssignment[];
   time?: TimeSession[];
+  parts?: Ticket[];
   order?: Order;
 }
 

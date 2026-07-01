@@ -26,6 +26,8 @@ const addTicketSchema = z.object({
   qty: z.number().int().positive().optional(),
   unitPrice: z.number().nonnegative().optional(),
   resinType: resinTypeSchema.nullish(),
+  themeImage: z.string().nullish(), // per-slide colour reference image
+  status: z.string().optional(), // initial stage for a manual ticket
 });
 
 interface CatPart {
@@ -119,13 +121,13 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     const isPending = order.status === 'Pending';
     let tnCounter = isPending ? 0 : await nextTn();
     const tnFor = () => (isPending ? null : tnCounter++);
-    const themeImage = order.themeImage ?? null;
+    const themeImage = body.themeImage ?? order.themeImage ?? null;
 
     if (body.fromCatalogueId != null) {
       const tpl = unwrap(
         await db.from('catalogue').select('*, parts:catalogue_parts(*)')
           .eq('id', body.fromCatalogueId).is('deletedAt', null).maybeSingle(),
-      ) as { name: string; drawing: string | null; unitPrice: number; parts: CatPart[] } | null;
+      ) as { name: string; drawing: string | null; unitPrice: number; assemblyHrs: number; parts: CatPart[] } | null;
       if (!tpl) return reply.badRequest('fromCatalogueId does not reference a catalogue item');
 
       const resin = body.resin ?? order.resinType ?? 'Standard';
@@ -133,6 +135,8 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       const colour = (body.colour ?? '').trim();
       const spec = colour ? colour + resinTag : resinTag.replace(/^\s*\/\s*/, '') || null;
       const parts = (tpl.parts ?? []).slice().sort((a, b) => a.id - b.id);
+      // Optional price override (e.g. from CSV import); defaults to the template price.
+      const price = body.unitPrice ?? tpl.unitPrice;
 
       if (parts.length <= 1) {
         const p = parts[0];
@@ -141,7 +145,7 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
             orderId: id, tn: tnFor(), type: 'MADE', detail: tpl.name,
             spec: spec ?? p?.spec ?? null, drawing: tpl.drawing ?? p?.drawing ?? null,
             status: '1. Spec Required', pct: 0, wc: order.wc, hrs: p?.hrs ?? 0, qty: 1,
-            unitPrice: tpl.unitPrice, netPrice: tpl.unitPrice, resinType: resin,
+            unitPrice: price, netPrice: price, resinType: resin,
             mouldId: p?.mouldId ?? null, themeImage,
           }).select('id'),
         );
@@ -150,7 +154,7 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'COMP', detail: tpl.name, spec,
             drawing: tpl.drawing ?? null, status: '1. Spec Required', pct: 0, wc: order.wc,
-            hrs: 0, qty: 1, unitPrice: tpl.unitPrice, netPrice: tpl.unitPrice, resinType: resin, themeImage,
+            hrs: tpl.assemblyHrs ?? 0, qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
           }).select('id').single(),
         ) as { id: number };
         const partRows = parts.map((p) => ({
@@ -167,14 +171,14 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       if (!body.type || !body.detail) {
         return reply.badRequest('A manual ticket needs at least "type" and "detail"');
       }
-      const status = body.type === 'RAW' ? 'Ordered' : '1. Spec Required';
+      const status = body.status ?? (body.type === 'RAW' ? 'Ordered' : '1. Spec Required');
       const qty = body.qty ?? 1;
       const unitPrice = body.unitPrice ?? 0;
       unwrap(
         await db.from('tickets').insert({
           orderId: id, tn: tnFor(), type: body.type, detail: body.detail,
           spec: body.spec ?? null, drawing: body.drawing ?? null, status,
-          pct: AUTO_PCT[status] ?? 0, wc: order.wc, hrs: body.hrs ?? 0, qty, unitPrice,
+          pct: AUTO_PCT[status as keyof typeof AUTO_PCT] ?? 0, wc: order.wc, hrs: body.hrs ?? 0, qty, unitPrice,
           netPrice: unitPrice * qty, resinType: body.resinType ?? order.resinType, themeImage,
         }).select('id'),
       );

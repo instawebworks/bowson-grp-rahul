@@ -4,6 +4,13 @@ import { useCreateOperative, useUpdateOperative, type OperativeFormInput } from 
 import type { Operative } from '../lib/types';
 import { Button, Field, Modal, inputClass } from './ui';
 
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** Build a 7-entry Mon–Sun default pattern from a per-day default (weekend off). */
+function defaultPattern(perDay: number): number[] {
+  return [perDay, perDay, perDay, perDay, perDay, 0, 0];
+}
+
 export function OperativeForm({ operative, onClose }: { operative?: Operative; onClose: () => void }) {
   const isEdit = !!operative;
   const create = useCreateOperative();
@@ -13,10 +20,20 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
   const [name, setName] = useState(operative?.name ?? '');
   const [skills, setSkills] = useState<string[]>(operative?.skills ?? []);
   const [defaultHrs, setDefaultHrs] = useState<number | ''>(operative?.defaultHrs ?? '');
+  const [dayPattern, setDayPattern] = useState<number[]>(
+    operative?.dayPattern && operative.dayPattern.length >= 7
+      ? operative.dayPattern.slice(0, 7)
+      : defaultPattern(operative?.defaultHrs ?? 7.5),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const toggleSkill = (s: string) =>
     setSkills((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+
+  const setDay = (i: number, v: number) =>
+    setDayPattern((cur) => cur.map((h, j) => (j === i ? Math.max(0, v) : h)));
+
+  const weekTotal = dayPattern.reduce((a, b) => a + b, 0);
 
   async function submit() {
     setError(null);
@@ -28,6 +45,7 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       name: name.trim(),
       skills,
       defaultHrs: defaultHrs === '' ? null : Number(defaultHrs),
+      dayPattern,
     };
     try {
       if (isEdit) await update.mutateAsync({ id: operative.id, input });
@@ -67,6 +85,35 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
           />
         </Field>
       </div>
+      <div className="mt-3">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-text2">Standard weekly pattern</span>
+          <span className="text-[10px] text-text3">{weekTotal}h / week</span>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {DAYS.map((d, i) => (
+            <div key={d} className="flex flex-col items-center gap-1">
+              <span className={`text-[10px] font-semibold ${(dayPattern[i] ?? 0) === 0 ? 'text-text3' : 'text-text2'}`}>{d}</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={dayPattern[i] ?? 0}
+                onChange={(e) => setDay(i, e.target.value === '' ? 0 : Number(e.target.value))}
+                className={`${inputClass} px-1 py-1 text-center text-[11px]`}
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setDayPattern(defaultPattern(defaultHrs === '' ? 7.5 : Number(defaultHrs)))}
+          className="mt-1.5 text-[10px] text-teal hover:underline"
+        >
+          Reset to Mon–Fri {defaultHrs === '' ? 7.5 : Number(defaultHrs)}h (weekend off)
+        </button>
+      </div>
+
       <div className="mt-3">
         <span className="mb-1 block text-[11px] font-semibold text-text2">Skills</span>
         <div className="flex flex-wrap gap-1.5">

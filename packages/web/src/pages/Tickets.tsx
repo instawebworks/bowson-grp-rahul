@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { GRP_STAGES } from '@bowson/shared';
 import { useTickets } from '../lib/hooks';
-import { Button, Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table, inputClass } from '../components/ui';
+import { Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
+import { TicketDetailModal } from '../components/TicketDetailModal';
 import { fmtDate } from '../lib/format';
-import { downloadCsv } from '../lib/csv';
 import type { Ticket } from '../lib/types';
+
+// Toolbar control styling (no forced full width, so the row stays compact).
+const ctrl = 'rounded-md border border-border2 bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-teal';
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -21,10 +23,10 @@ function TypeBadge({ type }: { type: string }) {
 
 export function Tickets({ title = 'All Tickets', statuses }: { title?: string; statuses?: string[] } = {}) {
   const { data, isLoading, error } = useTickets();
-  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [showDespatched, setShowDespatched] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const locked = !!statuses;
 
   const all = data ?? [];
@@ -65,34 +67,22 @@ export function Tickets({ title = 'All Tickets', statuses }: { title?: string; s
 
   return (
     <>
+      {detailId != null && <TicketDetailModal ticketId={detailId} onClose={() => setDetailId(null)} />}
       <PageHeader
         title={title}
         sub={`${rows.length} ticket${rows.length === 1 ? '' : 's'}`}
-        actions={
-          <Button onClick={() => downloadCsv('tickets.csv', [
-            { key: 'tn', label: 'TN', value: (r: { ticket: Ticket }) => r.ticket.tn ?? '' },
-            { key: 'type', label: 'Type', value: (r) => r.ticket.type },
-            { key: 'order', label: 'Order', value: (r) => r.ticket.order?.orderNumber ?? `#${r.ticket.orderId}` },
-            { key: 'customer', label: 'Customer', value: (r) => r.ticket.order?.customer?.name ?? '' },
-            { key: 'ref', label: 'Customer Ref', value: (r) => r.ticket.order?.siteName ?? '' },
-            { key: 'detail', label: 'Detail', value: (r) => r.ticket.detail },
-            { key: 'stage', label: 'Stage', value: (r) => r.ticket.status },
-            { key: 'pct', label: 'Progress %', value: (r) => r.ticket.pct },
-            { key: 'hrs', label: 'Hrs', value: (r) => r.ticket.hrs },
-          ], rows)}>⭳ Export CSV</Button>
-        }
       />
       <Content>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket / detail…" className={`${inputClass} max-w-xs`} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket / detail…" className={`${ctrl} w-64`} />
           {!locked && (
             <>
-              <select value={stage} onChange={(e) => setStage(e.target.value)} className={`${inputClass} w-auto`}>
+              <select value={stage} onChange={(e) => setStage(e.target.value)} className={ctrl}>
                 <option value="">All stages</option>
                 {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              <label className="flex items-center gap-1.5 text-xs text-text2">
-                <input type="checkbox" checked={showDespatched} onChange={(e) => setShowDespatched(e.target.checked)} />
+              <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text2">
+                <input type="checkbox" className="accent-teal" checked={showDespatched} onChange={(e) => setShowDespatched(e.target.checked)} />
                 Show despatched
               </label>
             </>
@@ -111,7 +101,7 @@ export function Tickets({ title = 'All Tickets', statuses }: { title?: string; s
                 <tr
                   key={t.id}
                   className={`cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40 ${child ? 'bg-surface2/40' : ''}`}
-                  onClick={() => o && navigate(`/orders/${t.orderId}`)}
+                  onClick={() => setDetailId(t.id)}
                 >
                   <td className="px-3 py-2 tabular-nums text-text3">{child ? '↳ ' : ''}{t.tn ?? '—'}</td>
                   <td className="px-3 py-2"><TypeBadge type={t.type} /></td>
