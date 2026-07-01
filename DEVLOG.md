@@ -514,3 +514,28 @@ as a serverless function); Docker/Coolify path kept intact.
 a token). **Not validated on Vercel itself** (no Vercel CLI here) — the serverless
 bundling of the Fastify app + workspace `@bowson/shared` should be confirmed on the
 first Vercel deploy.
+
+## 2026-06-30 — Vercel deploy fixes, bug review, test prefill
+
+**Vercel deployment (now live & working):**
+- Fixed serverless crash `ERR_MODULE_NOT_FOUND @bowson/shared/src/index.ts` —
+  shared now exports compiled JS (`dist`, with a `development`→src condition);
+  vercel.json builds shared during install. (commit 2ed505e)
+- Fixed env crash — `SUPABASE_URL` had been pasted into Vercel **with quotes**
+  (invalid url); removing the quotes let the function boot.
+- Fixed nested-route 404 — the `[...path]` catch-all only matched one segment on
+  Vercel (`/api/customers` ok, `/api/customers/6` → NOT_FOUND). Replaced with a
+  single `api/index.ts` + `vercel.json` rewrite `/api/(.*) → /api/index?__path=$1`;
+  the handler rebuilds req.url so Fastify matches any depth. Verified GET + PATCH
+  on live. (commit abc3b05)
+
+**Bug review (reported, not yet fixed):**
+- COMP delete orphans its PART children (should cascade soft-delete).
+- `resolveRole` DEFAULT_ROLE=admin → any logged-in user is admin (use operative).
+- Auth accepts unverified tokens if `AUTH_REQUIRED=true` but JWT secret empty.
+- Medium: catalogue PATCH non-atomic; tn race; api/index.ts caches failed boot.
+
+**Testing:** Login page prefilled with admin/admin123 (marked "remove before
+production") for A-to-Z manual testing on localhost.
+
+**Note:** secrets (service_role, JWT) were shared in chat during debugging — rotate.

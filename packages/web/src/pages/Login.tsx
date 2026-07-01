@@ -9,8 +9,9 @@ const toEmail = (u: string) => (u.includes('@') ? u.trim() : `${u.trim().toLower
 
 export function Login() {
   const { signIn } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  // Prefilled for testing — remove these defaults before production.
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('admin123');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
