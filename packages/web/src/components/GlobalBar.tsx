@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../lib/auth';
 import { Button } from './ui';
@@ -15,13 +15,15 @@ type Popup = null | 'order' | 'ticket-pin' | 'ticket' | 'import';
  * Import / Ticket / Order actions + a saved indicator. Rendered by PageHeader
  * so the whole app has a single header row (matches the prototype's top bar).
  */
-export function GlobalBar({ actions = true }: { actions?: boolean }) {
+export function GlobalBar({ actions = true, leading }: { actions?: boolean; leading?: ReactNode }) {
   const { canManage } = useAuth();
   const [popup, setPopup] = useState<Popup>(null);
 
   return (
     <div className="flex items-center gap-1.5">
       <GlobalSearch />
+
+      {leading}
 
       {actions && canManage && (
         <>

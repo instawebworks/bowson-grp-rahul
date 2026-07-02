@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MANAGER_PIN } from '../lib/config';
+import { useSettings } from '../lib/hooks';
 import { Button, Modal } from './ui';
 
 /**
@@ -21,12 +22,14 @@ export function ManagerPinGate({
   onSuccess: () => void;
   onCancel: () => void;
 }) {
+  const { data: settings } = useSettings();
+  const validPin = settings?.managerPin ?? MANAGER_PIN;
   const [pin, setPin] = useState('');
   const [err, setErr] = useState(false);
   const [show, setShow] = useState(false);
 
   function authorise() {
-    if (pin !== MANAGER_PIN) {
+    if (pin !== validPin) {
       setErr(true);
       setPin('');
       return;

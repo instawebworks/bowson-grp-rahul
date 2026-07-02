@@ -402,6 +402,28 @@ export function useCatalogue() {
   return useQuery({ queryKey: ['catalogue'], queryFn: () => apiClient.get<Catalogue[]>('/api/catalogue') });
 }
 
+// ─── App settings (stage weightings + manager PIN) ───────────────────────────
+export interface AppSettings {
+  stageWeights: Record<string, number>;
+  managerPin: string;
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: ['settings'], queryFn: () => apiClient.get<AppSettings>('/api/settings') });
+}
+
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Partial<AppSettings>) => apiClient.put<AppSettings>('/api/settings', input),
+    onSuccess: (data) => {
+      qc.setQueryData(['settings'], data);
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export interface CataloguePartInput { detail: string; drawing?: string | null; hrs?: number; price?: number; mouldId?: number | null }
 export interface CatalogueFormInput {
   productCode: string;

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { NAV } from '../nav';
 import { NavIcon } from './icons';
 import { useAuth } from '../lib/auth';
+import { useOrders, useTickets } from '../lib/hooks';
 import logoUrl from '../assets/bowson-logo.jpg';
 
 export function Layout() {
@@ -41,6 +42,7 @@ export function Layout() {
           ))}
         </nav>
 
+        <SidebarStats />
         <SidebarFooter />
       </aside>
 
@@ -52,15 +54,24 @@ export function Layout() {
   );
 }
 
+function SidebarStats() {
+  const { data: orders } = useOrders();
+  const { data: tickets } = useTickets();
+  const o = orders?.length ?? 0;
+  const t = tickets?.length ?? 0;
+  return (
+    <div className="border-t border-border px-4 py-2 text-[10px] text-text3">
+      {o} order{o === 1 ? '' : 's'} · {t} ticket{t === 1 ? '' : 's'}
+    </div>
+  );
+}
+
 function SidebarFooter() {
   const { session, signOut } = useAuth();
   if (session) {
     return (
-      <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
-        <span className="truncate text-[10px] text-text3" title={session.user.email ?? ''}>
-          {session.user.email}
-        </span>
-        <button onClick={() => void signOut()} className="shrink-0 text-[10px] font-semibold text-teal hover:underline">
+      <div className="border-t border-border px-4 py-2.5">
+        <button onClick={() => void signOut()} className="text-sm font-semibold text-teal hover:underline">
           Sign out
         </button>
       </div>

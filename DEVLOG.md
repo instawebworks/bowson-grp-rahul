@@ -958,3 +958,62 @@ mould tabs — not yet ported.
 - **Import CSV** — parses that format (a `product_code` row starts a template; blank
   rows add parts) and creates templates via `useCreateCatalogue`.
 - Web typecheck clean.
+
+---
+
+## 2026-07-01 — Header cleanup + Operatives & Settings rebuild
+
+- **Global create buttons** (Import CSV / +Ticket / +Order) now hidden on the
+  Customers and Operatives pages too (`globalActions={false}`), matching the prototype
+  (Schedule/Moulds/Catalogue already were).
+- **Header ordering** — page actions now render *after* the search box (search →
+  page action → global buttons → Saved), via a `leading` slot on `GlobalBar`. So e.g.
+  Customers reads `[search] [+ New Customer] [✓ Saved]`.
+- **Operatives & Settings** (`Operatives.tsx`, rebuilt to match `t-card.html`):
+  - Hint line "Click an operative to edit…" + **+ Add operative** in the content.
+  - Full-width operative rows: avatar, name, "Xh standard week · N active tickets"
+    (live count of assigned non-despatched tickets), skills tags / "No skills set",
+    "Click to edit →", and a Mon–Sun day-hours strip (red 0h / amber <7.5 / teal).
+  - **Stage Completion Weightings** panel (read-only) — each stage's remaining-% with a
+    bar, from `STAGE_HRS_REMAINING`, with the explanatory text.
+  - **Manager PIN** info card (shows the configured PIN).
+- Web typecheck clean.
+
+Note: weightings + PIN are read-only for now (no settings-persistence backend yet); the
+prototype makes them editable via localStorage.
+
+---
+
+## 2026-07-01 — Settings backend (editable stage weightings + manager PIN)
+
+Made the Operatives & Settings weightings and manager PIN editable + persisted.
+
+**Done**
+- **DB:** new key/value `settings` table (`key`, `value jsonb`, `updatedAt`) — added to
+  `schema.sql` (+ RLS list) and a `scripts/migrate-settings.ts` migration (SSL-first
+  connect with fall-through).
+- **API:** `/api/settings` — `GET` merges stored values over defaults
+  (`STAGE_HRS_REMAINING` + PIN `1234`); `PUT` upserts `stageWeights` / `managerPin`
+  (manager-gated by the existing role hook). Registered in `index.ts`.
+- **Web:** `useSettings` / `useUpdateSettings` hooks + `apiClient.put`. Operatives page
+  weightings are now editable inputs with **Save / Reset**; a **Manager PIN** change
+  form (current/new/confirm) persists the PIN. `ManagerPinGate` now validates against the
+  stored PIN (falls back to the config constant while loading). Schedule Planner's
+  committed-hours calc uses the stored weights.
+- Typecheck clean (web + api).
+
+**Blocked (infra):** could not create the table from here — the direct Postgres port
+(51.81.93.33:5502) accepts TCP but resets the protocol handshake (Coolify likely
+IP-whitelists DB connections). The table must be created once via Supabase Studio SQL
+(see hand-off). Until then, GET falls back to defaults so the PIN gate still works (1234)
+and the UI renders; saving needs the table.
+
+---
+
+## 2026-07-01 — Remove Activity Log; sidebar order/ticket totals
+
+- Removed the **Activity Log** section: dropped the nav item (`nav.ts`), the `/audit`
+  route + import (`App.tsx`), and deleted `pages/Audit.tsx`.
+- Added a **"N orders · N tickets"** totals line to the sidebar footer (`SidebarStats`
+  in `Layout.tsx`), matching the prototype's footer counter.
+- Web typecheck clean.

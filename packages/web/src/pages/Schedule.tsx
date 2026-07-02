@@ -9,7 +9,7 @@ import {
   wcKey,
   type GrpStage,
 } from '@bowson/shared';
-import { useOperatives, useSchedule, useTickets, useUpdateOperative } from '../lib/hooks';
+import { useOperatives, useSchedule, useSettings, useTickets, useUpdateOperative } from '../lib/hooks';
 import { OperativeForm } from '../components/OperativeForm';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { Button, Card, Content, Metric, Modal, PageHeader, QueryState, StatusPill, Table } from '../components/ui';
@@ -45,6 +45,7 @@ function ticketWeekKey(t: Ticket): string {
 export function Schedule() {
   const { data: operatives } = useOperatives();
   const { data: tickets } = useTickets();
+  const { data: settings } = useSettings();
   const { canManage } = useAuth();
   const updateOp = useUpdateOperative();
 
@@ -71,11 +72,12 @@ export function Schedule() {
 
   const weekCapacity = ops.reduce((s, op) => s + [0, 1, 2, 3, 4].reduce((ss, di) => ss + opDayHrs(op, di), 0), 0);
 
+  const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
   const committedFor = (key: string) =>
     Math.round(
       allTickets
         .filter((t) => LIVE.includes(t.status) && ticketWeekKey(t) === key)
-        .reduce((s, t) => s + (t.hrs || 0) * (STAGE_HRS_REMAINING[t.status as GrpStage] ?? 1), 0),
+        .reduce((s, t) => s + (t.hrs || 0) * (weights[t.status] ?? 1), 0),
     );
 
   const ticketsFor = (key: string) =>

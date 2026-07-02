@@ -20,8 +20,7 @@ export function PageHeader({
         {sub && <div className="text-[11px] text-text3">{sub}</div>}
       </div>
       <div className="ml-auto flex items-center gap-2">
-        {actions && <div className="flex items-center gap-1.5">{actions}</div>}
-        <GlobalBar actions={globalActions} />
+        <GlobalBar actions={globalActions} leading={actions} />
       </div>
     </header>
   );

@@ -14,7 +14,6 @@ import { Operatives } from './pages/Operatives';
 import { Moulds } from './pages/Moulds';
 import { Catalogue } from './pages/Catalogue';
 import { Search } from './pages/Search';
-import { Audit } from './pages/Audit';
 import { Schedule } from './pages/Schedule';
 
 export default function App() {
@@ -55,7 +54,6 @@ function Gate() {
           <Route path="catalogue" element={<Catalogue />} />
           <Route path="customers" element={<Customers />} />
           <Route path="operatives" element={<Operatives />} />
-          <Route path="audit" element={<Audit />} />
           <Route path="search" element={<Search />} />
           <Route path="*" element={<PagePlaceholder title="Not found" />} />
         </Route>

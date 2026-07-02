@@ -31,6 +31,7 @@ export function Customers() {
         title="Customers"
         sub={`${rows.length} customer${rows.length === 1 ? '' : 's'}`}
         actions={canManage ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ New Customer</Button> : undefined}
+        globalActions={false}
       />
       <Content>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className={`${inputClass} mb-3 max-w-xs`} />

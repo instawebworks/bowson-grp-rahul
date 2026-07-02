@@ -194,6 +194,13 @@ create table "audit_log" (
 );
 create index on "audit_log" ("entityType", "entityId");
 
+-- ─── App settings (key/value: stage weightings, manager PIN) ────────────────
+create table "settings" (
+  "key"       text primary key,
+  "value"     jsonb not null,
+  "updatedAt" timestamptz not null default now()
+);
+
 -- ─── Users (mirrors Supabase auth.users) ────────────────────────────────────
 create table "users" (
   "id"          uuid primary key,
@@ -229,7 +236,7 @@ declare t text;
 begin
   foreach t in array array[
     'customers','operatives','moulds','orders','tickets','ticket_assignments',
-    'time_sessions','catalogue','catalogue_parts','catalogue_hardware','audit_log','users'
+    'time_sessions','catalogue','catalogue_parts','catalogue_hardware','audit_log','users','settings'
   ]
   loop
     execute format('alter table %I enable row level security', t);

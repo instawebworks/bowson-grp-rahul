@@ -14,6 +14,7 @@ import { dashboardRoutes } from './routes/dashboard.js';
 import { searchRoutes } from './routes/search.js';
 import { auditRoutes } from './routes/audit.js';
 import { scheduleRoutes } from './routes/schedule.js';
+import { settingsRoutes } from './routes/settings.js';
 
 export async function buildServer() {
   const app = Fastify({
@@ -82,6 +83,7 @@ export async function buildServer() {
   await app.register(searchRoutes, { prefix: '/api/search' });
   await app.register(auditRoutes, { prefix: '/api/audit' });
   await app.register(scheduleRoutes, { prefix: '/api/schedule' });
+  await app.register(settingsRoutes, { prefix: '/api/settings' });
 
   return app;
 }
