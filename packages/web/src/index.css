@@ -39,3 +39,19 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* Tailwind v4 Preflight resets buttons to cursor:default — restore the pointer
+   on all clickable elements, project-wide. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  label:has(> input[type='checkbox']),
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}

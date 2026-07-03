@@ -1017,3 +1017,21 @@ and the UI renders; saving needs the table.
 - Added a **"N orders · N tickets"** totals line to the sidebar footer (`SidebarStats`
   in `Layout.tsx`), matching the prototype's footer counter.
 - Web typecheck clean.
+
+---
+
+## 2026-07-01 — Fix: all DELETE requests failed from the browser (400)
+
+**Symptom:** "Yes — abandon" (and any delete) did nothing — the modal stayed open.
+
+**Cause:** `api.ts` set `Content-Type: application/json` on every request. DELETE/GET
+send no body, and Fastify rejects an empty body when the content-type claims JSON →
+`400 "Body cannot be empty when content-type is set to 'application/json'"`. (curl tests
+passed because curl sent no content-type header.)
+
+**Fix:** only add the JSON content-type header when there is a request body. Verified via
+Playwright: abandon now `DELETE → 204` and the modal closes. Affected every delete
+(orders, tickets, catalogue, customers, operatives, moulds).
+
+**Also:** global `cursor: pointer` for buttons/selects/label-checkboxes (Tailwind v4
+Preflight sets buttons to `cursor:default`); disabled buttons get `not-allowed`.

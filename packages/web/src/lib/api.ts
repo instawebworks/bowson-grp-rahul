@@ -13,7 +13,9 @@ async function authHeader(): Promise<Record<string, string>> {
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // Only declare a JSON body when there actually is one — Fastify rejects an
+    // empty body sent with Content-Type: application/json (e.g. DELETE requests).
+    ...(options.body != null ? { 'Content-Type': 'application/json' } : {}),
     ...(await authHeader()),
     ...((options.headers as Record<string, string>) ?? {}),
   };
