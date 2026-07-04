@@ -22,7 +22,7 @@ const PLACEHOLDER: Record<TType, string> = {
 /** Standalone "New Ticket" form — fields adapt to the selected product type. */
 export function NewTicketForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: orders } = useOrders();
+  const { data: orders, isLoading: ordersLoading } = useOrders();
   const { data: catalogue } = useCatalogue();
 
   const [type, setType] = useState<TType>('MADE');
@@ -108,8 +108,8 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={busy}>
-            {busy ? 'Adding…' : 'Add ticket'}
+          <Button variant="primary" onClick={submit} disabled={busy || ordersLoading || !orderId}>
+            {busy ? 'Adding…' : ordersLoading ? 'Loading orders…' : 'Add ticket'}
           </Button>
         </>
       }
@@ -135,14 +135,23 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
       <FormSection title="Parent order">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Order" required>
-            <select className={inputClass} value={orderId} onChange={(e) => setOrderId(e.target.value ? Number(e.target.value) : '')} autoFocus>
-              <option value="">— Select order —</option>
+            <select
+              className={inputClass}
+              value={orderId}
+              onChange={(e) => setOrderId(e.target.value ? Number(e.target.value) : '')}
+              disabled={ordersLoading}
+              autoFocus
+            >
+              <option value="">{ordersLoading ? 'Loading orders…' : '— Select order —'}</option>
               {(orders ?? []).map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.orderNumber}{o.customer?.name ? ` · ${o.customer.name}` : ''}
                 </option>
               ))}
             </select>
+            {!ordersLoading && (orders?.length ?? 0) === 0 && (
+              <p className="mt-1 text-[11px] text-red">No orders found — create an order first.</p>
+            )}
           </Field>
           <Field label="Ticket number">
             <input className={`${inputClass} bg-surface2 text-text3`} value="Auto-assigned on release" disabled readOnly />

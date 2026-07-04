@@ -11,7 +11,7 @@ import {
   useSetCure,
 } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
-import { AddTicketModal } from '../components/AddTicketModal';
+import { TicketForm } from '../components/TicketForm';
 import { EditOrderForm } from '../components/EditOrderForm';
 import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
@@ -193,7 +193,14 @@ export function OrderDetail() {
 
   return (
     <>
-      {showAdd && <AddTicketModal orderId={orderId} onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+        <TicketForm
+          orderId={orderId}
+          orderNumber={order.orderNumber}
+          defaultResin={order.resinType}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
       {showEdit && <EditOrderForm order={order} onClose={() => setShowEdit(false)} />}
       <PageHeader
         title={`Order ${order.orderNumber}`}

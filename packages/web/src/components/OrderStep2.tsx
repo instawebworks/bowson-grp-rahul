@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { RESIN_TYPES, formatWc, mondayOf } from '@bowson/shared';
+import { useMemo, useRef, useState, type ComponentProps } from 'react';
+import { RESIN_TYPES, formatWc, isoDate, mondayOf, wcForDeadline } from '@bowson/shared';
 import {
   useAddTicket,
   useCatalogue,
@@ -7,21 +7,37 @@ import {
   useOrder,
   useSchedule,
   useUpdateOrder,
+  useUpdateTicket,
 } from '../lib/hooks';
-import { Button, Field, FormSection, inputClass } from './ui';
+import { Button, Field as FieldBase, FormSection as FormSectionBase, inputClassLg as inputClass } from './ui';
 import { CatalogueForm } from './CatalogueForm';
+import { TicketForm } from './TicketForm';
 import type { Catalogue, Ticket } from '../lib/types';
+
+// Larger, more legible field sizing for this customer-facing order form.
+const Field = (props: ComponentProps<typeof FieldBase>) => <FieldBase size="lg" {...props} />;
+const FormSection = (props: ComponentProps<typeof FormSectionBase>) => <FormSectionBase size="lg" {...props} />;
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const cellInput = 'w-full rounded-md border border-border2 bg-surface px-2 py-1.5 text-xs outline-none focus:border-teal';
+
+/** Friendly "W/C 29 Jun 2026" label for a Monday date. */
+function weekLabel(monday: Date): string {
+  return `W/C ${monday.getDate()} ${MONTHS[monday.getMonth()]} ${monday.getFullYear()}`;
+}
 
 export function OrderStep2({
   orderId,
   orderNumber,
   resin: initialResin,
   onDone,
+  onAbandon,
 }: {
   orderId: number;
   orderNumber: string;
   resin: string;
   onDone: () => void;
+  onAbandon?: () => void;
 }) {
   const { data: order } = useOrder(orderId);
   const { data: catalogue } = useCatalogue();
@@ -29,6 +45,7 @@ export function OrderStep2({
   const add = useAddTicket(orderId);
   const del = useDeleteTicket(orderId);
   const updateOrder = useUpdateOrder(orderId);
+  const updateTicket = useUpdateTicket(orderId);
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Catalogue | null>(null);
@@ -38,9 +55,9 @@ export function OrderStep2({
   const [imageName, setImageName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [showManual, setShowManual] = useState(false);
-  const [manual, setManual] = useState({ type: 'MADE', detail: '', qty: 1, unitPrice: 0 });
+  const [showTicketForm, setShowTicketForm] = useState(false);
   const [showNewProduct, setShowNewProduct] = useState(false);
+  const [manualDl, setManualDl] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const matches = useMemo(() => {
@@ -56,8 +73,35 @@ export function OrderStep2({
   const partsOf = (id: number) => tickets.filter((t) => t.compParentId === id);
   const totalHrs = tickets.reduce((s, t) => s + (t.hrs || 0), 0);
   const weeklyCap = schedule?.weeklyCapacity ?? 0;
-  const weeksNeeded = weeklyCap > 0 ? Math.max(1, Math.ceil(totalHrs / weeklyCap)) : null;
-  const suggestedWc = formatWc(mondayOf(new Date()));
+  const weeksNeeded = totalHrs > 0 ? (weeklyCap > 0 ? Math.max(1, Math.ceil(totalHrs / weeklyCap)) : 1) : 0;
+
+  // Suggested schedule: start this Monday, run weeksNeeded weeks, deadline = +1 week buffer.
+  const startMonday = mondayOf(new Date());
+  const endMonday = new Date(startMonday);
+  endMonday.setDate(startMonday.getDate() + Math.max(0, weeksNeeded - 1) * 7);
+  const deadlineDate = new Date(endMonday);
+  deadlineDate.setDate(endMonday.getDate() + 11);
+  const suggestedWc = formatWc(startMonday);
+  const suggestedDeadline = isoDate(deadlineDate);
+  const scheduleSet = !!order?.deadline;
+
+  function editDetail(id: number, value: string) {
+    const v = value.trim();
+    if (!v) return; // detail is required — ignore empty edits
+    updateTicket.mutate({ ticketId: id, input: { detail: v } });
+  }
+  function editSpec(id: number, value: string) {
+    updateTicket.mutate({ ticketId: id, input: { spec: value.trim() || null } });
+  }
+  async function removeTicket(t: Ticket) {
+    setError(null);
+    try {
+      for (const p of partsOf(t.id)) await del.mutateAsync(p.id);
+      await del.mutateAsync(t.id);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -90,26 +134,6 @@ export function OrderStep2({
       setImage(null);
       setImageName(null);
       if (fileRef.current) fileRef.current.value = '';
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function addManual() {
-    setError(null);
-    if (!manual.detail.trim()) {
-      setError('Enter a detail for the manual ticket.');
-      return;
-    }
-    try {
-      await add.mutateAsync({
-        type: manual.type,
-        detail: manual.detail.trim(),
-        qty: manual.qty,
-        unitPrice: manual.unitPrice,
-      });
-      setManual({ type: 'MADE', detail: '', qty: 1, unitPrice: 0 });
-      setShowManual(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -173,9 +197,11 @@ export function OrderStep2({
           <div className="flex items-center gap-2">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
             <Button onClick={() => fileRef.current?.click()}>🖼 Upload image</Button>
-            <span className="text-[11px] text-text3">{imageName ?? 'No image — each slide can have its own'}</span>
+            <span className="text-xs text-text3">{imageName ?? 'No image — each slide can have its own'}</span>
           </div>
         </div>
+
+        {selected && <CataloguePreview selected={selected} colour={colour} resin={resin} />}
 
         <div className="mt-3">
           <Button variant="primary" onClick={addFromCatalogue} disabled={add.isPending || !selected}>
@@ -185,45 +211,27 @@ export function OrderStep2({
       </FormSection>
 
       <FormSection title="Or add a custom ticket manually">
-        {!showManual ? (
-          <Button onClick={() => setShowManual(true)}>+ Add manual ticket</Button>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Type">
-              <select className={inputClass} value={manual.type} onChange={(e) => setManual({ ...manual, type: e.target.value })}>
-                <option value="MADE">MADE (manufactured)</option>
-                <option value="RAW">RAW (bought-in)</option>
-              </select>
-            </Field>
-            <Field label="Quantity">
-              <input type="number" min={1} className={inputClass} value={manual.qty} onChange={(e) => setManual({ ...manual, qty: Number(e.target.value) || 1 })} />
-            </Field>
-            <div className="col-span-2">
-              <Field label="Detail" required>
-                <input className={inputClass} value={manual.detail} onChange={(e) => setManual({ ...manual, detail: e.target.value })} placeholder="Item description" />
-              </Field>
-            </div>
-            <Field label="Unit price (£)">
-              <input type="number" min={0} className={inputClass} value={manual.unitPrice} onChange={(e) => setManual({ ...manual, unitPrice: Number(e.target.value) || 0 })} />
-            </Field>
-            <div className="col-span-2 flex gap-2">
-              <Button variant="primary" onClick={addManual} disabled={add.isPending}>Add ticket</Button>
-              <Button onClick={() => setShowManual(false)}>Cancel</Button>
-            </div>
-          </div>
-        )}
+        <Button onClick={() => setShowTicketForm(true)}>+ Add manual ticket</Button>
+        <p className="mt-1.5 text-xs text-text3">
+          Opens the full ticket form — Bought-in, Slide or Assembly, with description, stage and pricing.
+        </p>
       </FormSection>
 
       <FormSection title={`Tickets on this order (${tickets.length})`}>
         {tops.length === 0 ? (
           <div className="text-xs text-text3">No tickets yet — add a product above.</div>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border">
+          <div>
             {tops.map((t) => (
-              <div key={t.id}>
-                <TicketRow t={t} onRemove={() => del.mutate(t.id)} removing={del.isPending} />
-                {partsOf(t.id).map((p) => <TicketRow key={p.id} t={p} indent />)}
-              </div>
+              <TicketCard
+                key={t.id}
+                t={t}
+                parts={partsOf(t.id)}
+                onEditDetail={editDetail}
+                onEditSpec={editSpec}
+                onRemove={() => removeTicket(t)}
+                removing={del.isPending}
+              />
             ))}
           </div>
         )}
@@ -231,19 +239,67 @@ export function OrderStep2({
 
       <FormSection title="Suggested Schedule">
         {tickets.length === 0 ? (
-          <div className="text-xs text-text3">Add tickets above to see a suggested schedule and deadline.</div>
+          <div className="rounded-md bg-surface2 px-3 py-3 text-xs text-text3">
+            Add tickets above to see a suggested schedule and deadline.
+          </div>
         ) : (
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <div>
-              <div><span className="text-text3">Total build hours:</span> <span className="font-semibold">{Math.round(totalHrs * 10) / 10}h</span></div>
-              {weeksNeeded != null && (
-                <div className="mt-0.5">≈ {weeksNeeded} week{weeksNeeded === 1 ? '' : 's'} at current capacity · suggested target week <span className="font-semibold">{suggestedWc}</span></div>
+          <>
+            <div className="rounded-lg border border-border bg-surface2 p-3">
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <div>
+                  <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text3">Total hours</div>
+                  <div className="text-xl font-bold leading-none">{Math.round(totalHrs * 10) / 10}h</div>
+                  <div className="mt-1 text-xs text-text3">{tickets.length} ticket{tickets.length === 1 ? '' : 's'}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text3">Suggested W/C start</div>
+                  <div className="text-[15px] font-bold text-teal">{weekLabel(startMonday)}</div>
+                  <div className="mt-1 text-xs text-text3">{weeksNeeded} week{weeksNeeded === 1 ? '' : 's'} of production</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text3">Suggested deadline</div>
+                  <div className="text-[15px] font-bold text-teal">{suggestedDeadline}</div>
+                  <div className="mt-1 text-xs text-text3">inc. 1 week buffer</div>
+                </div>
+              </div>
+              {scheduleSet ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-md bg-teal-l/60 px-3 py-2 text-xs text-teal">
+                  <span>✓ Deadline confirmed: <strong>{order?.deadline}</strong> · W/C: <strong>{order?.wc ?? '—'}</strong></span>
+                  <Button className="ml-auto" onClick={() => updateOrder.mutate({ wc: null, deadline: null })} disabled={updateOrder.isPending}>
+                    Change
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="primary" onClick={() => updateOrder.mutate({ wc: suggestedWc, deadline: suggestedDeadline })} disabled={updateOrder.isPending}>
+                    ✓ Accept suggestion
+                  </Button>
+                  <span className="text-xs text-text3">or set manually:</span>
+                  <input
+                    type="date"
+                    value={manualDl}
+                    onChange={(e) => setManualDl(e.target.value)}
+                    className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
+                  />
+                  <Button
+                    onClick={() => manualDl && updateOrder.mutate({ wc: wcForDeadline(manualDl), deadline: manualDl })}
+                    disabled={updateOrder.isPending || !manualDl}
+                  >
+                    Set
+                  </Button>
+                </div>
               )}
             </div>
-            <Button onClick={() => updateOrder.mutate({ wc: suggestedWc })} disabled={updateOrder.isPending}>
-              Set target week
-            </Button>
-          </div>
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
+              <Button variant="danger" onClick={() => onAbandon?.()}>✕ Abandon order</Button>
+              {scheduleSet ? (
+                <Button variant="primary" onClick={onDone}>✓ Confirm &amp; Add to Order Book</Button>
+              ) : (
+                <span className="text-xs text-text3">Accept a schedule above to confirm the order</span>
+              )}
+            </div>
+          </>
         )}
       </FormSection>
 
@@ -255,20 +311,198 @@ export function OrderStep2({
           onCreated={(c) => { setSelected(c); setQuery(c.name); }}
         />
       )}
+
+      {showTicketForm && (
+        <TicketForm
+          orderId={orderId}
+          orderNumber={orderNumber}
+          defaultResin={resin}
+          onClose={() => setShowTicketForm(false)}
+        />
+      )}
     </div>
   );
 }
 
-function TicketRow({ t, indent, onRemove, removing }: { t: Ticket; indent?: boolean; onRemove?: () => void; removing?: boolean }) {
+/** Ticket-type pill (labels + colours match t-card.html's typeBadge). */
+function PreviewTypeBadge({ type }: { type: string }) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    RAW: { label: 'Raw Stock', color: '#5c574f', bg: '#f0ede8' },
+    MADE: { label: 'Slide', color: '#0c6b50', bg: '#dff2eb' },
+    COMP: { label: 'Slide (Assembly)', color: '#1558a0', bg: '#e8f1fb' },
+    PART: { label: 'Part', color: '#6d28d9', bg: '#ede9fe' },
+  };
+  const s = map[type] ?? { label: type, color: '#5c574f', bg: '#f0ede8' };
   return (
-    <div className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs last:border-0">
-      <div className={indent ? 'pl-5 text-text2' : ''}>
-        <span className="mr-1.5 rounded px-1 py-0.5 text-[9px] font-bold" style={{ backgroundColor: '#f7f5f2', color: '#5c574f' }}>{t.type}</span>
-        {t.detail}
-        {t.spec && <span className="ml-1.5 text-[10px] text-text3">{t.spec}</span>}
+    <span className="inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ color: s.color, backgroundColor: s.bg }}>
+      {s.label}
+    </span>
+  );
+}
+
+/**
+ * Live preview of the tickets a catalogue product will create — a single Slide
+ * (MADE), or a Slide (Assembly) COMP plus one Part per piece. Mirrors the backend
+ * expansion in POST /orders/:id/tickets and t-card.html's s2UpdatePreview.
+ */
+function CataloguePreview({ selected, colour, resin }: { selected: Catalogue; colour: string; resin: string }) {
+  const parts = selected.parts ?? [];
+  const isMulti = !selected.singlePiece && parts.length > 1;
+  const asmHrs = selected.assemblyHrs || 0;
+  const totalHrs = parts.reduce((s, p) => s + (p.hrs || 0), 0) + asmHrs;
+  const resinTag = resin === 'M2' ? ' / M2 RESIN' : '';
+  const spec = (colour ? colour + resinTag : resinTag).replace(/^\s*\/\s*/, '');
+  const single = parts[0];
+
+  return (
+    <div className="mt-3">
+      <div className="overflow-hidden rounded-md border border-border">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-surface2 px-3 py-2">
+          <span className="text-xs font-bold">Preview — tickets to be created</span>
+          <div className="flex items-center gap-2">
+            <span
+              className="whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold"
+              style={isMulti ? { color: '#6d28d9', backgroundColor: '#ede9fe' } : { color: '#0c6b50', backgroundColor: '#dff2eb' }}
+            >
+              {isMulti ? `Slide (Assembly) — ${parts.length} parts` : 'Single Slide — 1 ticket'}
+            </span>
+            <span className="whitespace-nowrap text-xs text-text3">{Math.round(totalHrs * 10) / 10}h total</span>
+          </div>
+        </div>
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="text-text3">
+              <th className="border-b border-border px-2.5 py-1 text-left font-semibold">Ticket type</th>
+              <th className="border-b border-border px-2.5 py-1 text-left font-semibold">Detail</th>
+              <th className="border-b border-border px-2.5 py-1 text-left font-semibold">Spec</th>
+              <th className="border-b border-border px-2.5 py-1 text-right font-semibold">Hrs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isMulti ? (
+              <>
+                <tr className="bg-surface2">
+                  <td className="px-2.5 py-1"><PreviewTypeBadge type="COMP" /></td>
+                  <td className="px-2.5 py-1 font-semibold">
+                    {selected.name} <span className="text-[10px] font-normal text-text3">(assembly)</span>
+                  </td>
+                  <td className="px-2.5 py-1">{spec || '—'}</td>
+                  <td className="px-2.5 py-1 text-right">{asmHrs ? `${asmHrs}h` : '—'}</td>
+                </tr>
+                {parts.map((p) => (
+                  <tr key={p.id} className="border-t border-border">
+                    <td className="px-2.5 py-1 pl-5"><PreviewTypeBadge type="PART" /></td>
+                    <td className="px-2.5 py-1 text-text2">{p.detail}</td>
+                    <td className="px-2.5 py-1">{spec || p.spec || '—'}</td>
+                    <td className="px-2.5 py-1 text-right">{p.hrs || 0}h</td>
+                  </tr>
+                ))}
+              </>
+            ) : (
+              <tr>
+                <td className="px-2.5 py-1"><PreviewTypeBadge type="MADE" /></td>
+                <td className="px-2.5 py-1 font-semibold">{selected.name}</td>
+                <td className="px-2.5 py-1">{spec || single?.spec || '—'}</td>
+                <td className="px-2.5 py-1 text-right">{single?.hrs || 0}h</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
-      {onRemove && (
-        <button onClick={onRemove} disabled={removing} className="text-[11px] text-text3 hover:text-red">Remove</button>
+      {resin === 'M2' && (
+        <div className="mt-1.5 rounded-md border border-[#f0c040] bg-[#fff3cd] px-3 py-2 text-xs font-bold text-[#7a4800]">
+          ⚠ M2 RESIN selected — all tickets will be marked M2.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Editable ticket card for Step 2 — inline detail + colour/spec, plus a read-only
+ * list of the assembly's parts (each with its own editable detail/spec). Ports
+ * t-card.html's renderStep2Tickets. Edits save on blur.
+ */
+function TicketCard({
+  t,
+  parts,
+  onEditDetail,
+  onEditSpec,
+  onRemove,
+  removing,
+}: {
+  t: Ticket;
+  parts: Ticket[];
+  onEditDetail: (id: number, value: string) => void;
+  onEditSpec: (id: number, value: string) => void;
+  onRemove: () => void;
+  removing?: boolean;
+}) {
+  const isComp = t.type === 'COMP';
+  const totalHrs = isComp ? parts.reduce((s, p) => s + (p.hrs || 0), 0) : t.hrs || 0;
+
+  return (
+    <div className="mb-2 overflow-hidden rounded-lg border border-border">
+      <div className="border-b border-border bg-surface2 px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-2">
+          <PreviewTypeBadge type={t.type} />
+          <span className="text-xs text-text3">{Math.round(totalHrs * 10) / 10}h</span>
+          {t.netPrice ? (
+            <span className="ml-auto text-xs font-semibold">£{t.netPrice.toLocaleString()}</span>
+          ) : (
+            <span className="ml-auto" />
+          )}
+          <button
+            onClick={onRemove}
+            disabled={removing}
+            aria-label="Remove ticket"
+            className="rounded px-1.5 py-0.5 text-xs text-red hover:bg-red/10 disabled:opacity-50"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-text3">Detail</label>
+            <input
+              className={cellInput}
+              defaultValue={t.detail}
+              onBlur={(e) => e.target.value !== t.detail && onEditDetail(t.id, e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-text3">Colour / Spec</label>
+            <input
+              className={cellInput}
+              defaultValue={t.spec ?? ''}
+              placeholder="e.g. RAL 5002 Dark Blue"
+              onBlur={(e) => e.target.value !== (t.spec ?? '') && onEditSpec(t.id, e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {parts.length > 0 && (
+        <div className="bg-surface px-3 pb-2.5 pt-2">
+          <div className="mb-1.5 pl-5 text-[11px] font-bold uppercase tracking-wide text-text3">Parts</div>
+          {parts.map((p) => (
+            <div key={p.id} className="mb-1.5 grid grid-cols-[16px_1fr_1fr_40px] items-center gap-1.5 last:mb-0">
+              <span className="text-xs text-text3">↳</span>
+              <input
+                className={cellInput}
+                defaultValue={p.detail}
+                onBlur={(e) => e.target.value !== p.detail && onEditDetail(p.id, e.target.value)}
+              />
+              <input
+                className={cellInput}
+                defaultValue={p.spec ?? ''}
+                placeholder="Spec / colour"
+                onBlur={(e) => e.target.value !== (p.spec ?? '') && onEditSpec(p.id, e.target.value)}
+              />
+              <span className="text-right text-xs text-text3">{p.hrs || 0}h</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

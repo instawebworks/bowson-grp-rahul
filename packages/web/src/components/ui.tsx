@@ -176,31 +176,40 @@ export function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-100 flex items-start justify-center overflow-y-auto bg-black/30 p-4 pt-[8vh]"
+      className="fixed inset-0 z-100 flex items-start justify-center overflow-y-auto bg-black/30 p-4 pt-[5vh]"
       onMouseDown={onClose}
     >
       <div
-        className={`w-full ${width} overflow-hidden rounded-xl border border-border bg-surface shadow-xl`}
+        className={`flex max-h-[90vh] w-full ${width} flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-border bg-surface2 px-4 py-3">
+        <div className="flex flex-none items-start justify-between border-b border-border bg-surface2 px-4 py-3">
           <div>
             <div className="text-sm font-bold">{title}</div>
             {sub && <div className="text-[11px] text-text3">{sub}</div>}
           </div>
           <button onClick={onX ?? onClose} className="text-text3 hover:text-text" aria-label="Close">✕</button>
         </div>
-        <div className="p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">{footer}</div>}
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+        {footer && <div className="flex flex-none justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">{footer}</div>}
       </div>
     </div>
   );
 }
 
-export function FormSection({ title, children }: { title: string; children: ReactNode }) {
+export function FormSection({
+  title,
+  children,
+  size = 'sm',
+}: {
+  title: string;
+  children: ReactNode;
+  size?: 'sm' | 'lg';
+}) {
+  const legend = size === 'lg' ? 'text-[11px]' : 'text-[10px]';
   return (
     <fieldset className="mb-4 last:mb-0">
-      <legend className="mb-2 w-full border-b border-border pb-1 text-[10px] font-bold uppercase tracking-wide text-text3">
+      <legend className={`mb-2 w-full border-b border-border pb-1 ${legend} font-bold uppercase tracking-wide text-text3`}>
         {title}
       </legend>
       {children}
@@ -208,10 +217,21 @@ export function FormSection({ title, children }: { title: string; children: Reac
   );
 }
 
-export function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+export function Field({
+  label,
+  required,
+  children,
+  size = 'sm',
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+  size?: 'sm' | 'lg';
+}) {
+  const lbl = size === 'lg' ? 'text-xs' : 'text-[11px]';
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-semibold text-text2">
+      <span className={`mb-1 block ${lbl} font-semibold text-text2`}>
         {label}
         {required && <span className="text-red"> *</span>}
       </span>
@@ -222,6 +242,10 @@ export function Field({ label, required, children }: { label: string; required?:
 
 export const inputClass =
   'w-full rounded-md border border-border2 bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-teal';
+
+/** Larger, more legible input styling (14px) for the customer-facing order forms. */
+export const inputClassLg =
+  'w-full rounded-md border border-border2 bg-surface px-3 py-1.5 text-sm outline-none focus:border-teal';
 
 export function ProgressBar({ pct }: { pct: number }) {
   const hue = Math.round((pct / 100) * 120); // red → green

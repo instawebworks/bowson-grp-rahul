@@ -1,10 +1,14 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ComponentProps } from 'react';
 import { DESPATCH } from '@bowson/shared';
 import { useCreateOrder, useCustomers, useDeleteOrder, type CreateOrderInput } from '../lib/hooks';
 import type { Customer, Order } from '../lib/types';
-import { Button, Field, FormSection, Modal, inputClass } from './ui';
+import { Button, Field as FieldBase, FormSection as FormSectionBase, Modal, inputClassLg as inputClass } from './ui';
 import { CustomerForm } from './CustomerForm';
 import { OrderStep2 } from './OrderStep2';
+
+// This customer-facing form uses the larger, more legible field sizing.
+const Field = (props: ComponentProps<typeof FieldBase>) => <FieldBase size="lg" {...props} />;
+const FormSection = (props: ComponentProps<typeof FormSectionBase>) => <FormSectionBase size="lg" {...props} />;
 
 export function OrderForm({ onClose }: { onClose: () => void }) {
   const { data: customers } = useCustomers();
@@ -73,9 +77,15 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
           sub={`Order ${created.orderNumber} · Add tickets`}
           onClose={onClose}
           onX={() => setShowAbandon(true)}
-          footer={<Button variant="primary" onClick={onClose}>Done</Button>}
+          width="max-w-2xl"
         >
-          <OrderStep2 orderId={created.id} orderNumber={created.orderNumber} resin={created.resinType} onDone={onClose} />
+          <OrderStep2
+            orderId={created.id}
+            orderNumber={created.orderNumber}
+            resin={created.resinType}
+            onDone={onClose}
+            onAbandon={() => setShowAbandon(true)}
+          />
         </Modal>
         {showAbandon && (
           <Modal
@@ -108,6 +118,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
         title="New Order — Step 1 of 2"
         sub="Enter order details"
         onClose={onClose}
+        width="max-w-2xl"
         footer={
           <>
             <Button onClick={onClose}>Cancel</Button>
@@ -190,7 +201,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
         </FormSection>
 
         <FormSection title="Colour theme image">
-          <p className="mb-2.5 text-[11px] text-text3">
+          <p className="mb-2.5 text-xs text-text3">
             Upload a photo or image showing the colour scheme / theme for this order.
           </p>
           {form.themeImage && (
@@ -205,7 +216,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-2.5">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
             <Button onClick={() => fileRef.current?.click()}>🖼 Choose image</Button>
-            <span className="text-[11px] text-text3">{imageName ?? 'No image selected'}</span>
+            <span className="text-xs text-text3">{imageName ?? 'No image selected'}</span>
             {form.themeImage && (
               <button
                 onClick={() => {
@@ -213,7 +224,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
                   setImageName(null);
                   if (fileRef.current) fileRef.current.value = '';
                 }}
-                className="text-[11px] text-red hover:underline"
+                className="text-xs text-red hover:underline"
               >
                 Remove
               </button>

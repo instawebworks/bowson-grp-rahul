@@ -165,6 +165,27 @@ export function useAddTicket(orderId: number) {
   });
 }
 
+export interface TicketEditInput {
+  detail?: string;
+  spec?: string | null;
+  hrs?: number;
+}
+
+/** Inline edit of a ticket's detail / spec / hrs (used by the Step 2 ticket cards). */
+export function useUpdateTicket(orderId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticketId, input }: { ticketId: number; input: TicketEditInput }) =>
+      apiClient.patch(`/api/tickets/${ticketId}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export function useDeleteTicket(orderId: number) {
   const qc = useQueryClient();
   return useMutation({
