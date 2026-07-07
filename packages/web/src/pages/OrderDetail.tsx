@@ -222,7 +222,10 @@ export function OrderDetail() {
           <Meta label="Value" value={money(order.value)} />
         </div>
 
-        <Card title={`Tickets (${tickets.length})`}>
+        <Card
+          title={`Tickets (${tickets.length})`}
+          actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
+        >
           <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value']}>
             {tops.length === 0 && (
               <tr>

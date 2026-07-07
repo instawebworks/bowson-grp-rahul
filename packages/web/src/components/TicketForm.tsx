@@ -61,6 +61,7 @@ export function TicketForm({
 
   const [type, setType] = useState<FType>('MADE');
   const [catId, setCatId] = useState<number | ''>('');
+  const [catRef, setCatRef] = useState<number | ''>(''); // Assembly "Product catalogue" (fills description)
   const [parts, setParts] = useState<CataloguePart[]>([]);
   const [detail, setDetail] = useState('');
   const [spec, setSpec] = useState('');
@@ -77,6 +78,7 @@ export function TicketForm({
   function changeType(next: FType) {
     setType(next);
     setCatId('');
+    setCatRef('');
     setParts([]);
     setStatus(next === 'RAW' ? 'Ordered' : '1. Spec Required');
   }
@@ -105,6 +107,15 @@ export function TicketForm({
     setDrawing(tpl.drawing ?? tpl.code ?? '');
     setHrs(tpl.assemblyHrs ?? 0);
     setUnitPrice(tpl.unitPrice ?? 0);
+  }
+
+  // Assembly "Product catalogue" picker — fills the description from a catalogue product.
+  function pickCatRef(id: number | '') {
+    setCatRef(id);
+    const tpl = id ? (catalogue ?? []).find((c) => c.id === id) : undefined;
+    if (!tpl) return;
+    setDetail(`[${tpl.code ?? tpl.productCode}] ${tpl.name.toUpperCase()}`);
+    setDrawing(tpl.drawing ?? tpl.code ?? '');
   }
 
   async function submit() {
@@ -201,7 +212,7 @@ export function TicketForm({
       </FormSection>
 
       {/* CATALOGUE / TEMPLATE PICKER */}
-      {type === 'MADE' && (
+      {type !== 'COMP' && (
         <FormSection title="Select from catalogue">
           <Field label="Product catalogue">
             <select
@@ -209,7 +220,7 @@ export function TicketForm({
               value={catId}
               onChange={(e) => pickCatalogueMade(e.target.value ? Number(e.target.value) : '')}
             >
-              <option value="">— Select a slide or enter manually below —</option>
+              <option value="">— Select a product or enter manually below —</option>
               {(catalogue ?? []).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -219,43 +230,60 @@ export function TicketForm({
       )}
 
       {type === 'COMP' && (
-        <FormSection title="Start from template">
-          <Field label="Product template" required>
-            <select
-              className={inputClass}
-              value={catId}
-              onChange={(e) => pickTemplate(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">— Select a template —</option>
-              {(catalogue ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.parts.length} part{c.parts.length === 1 ? '' : 's'}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {catId !== '' && parts.length > 0 && (
-            <>
-              <div className="mt-2 overflow-hidden rounded-md border border-border">
-                <div className="grid grid-cols-[1fr_120px_48px] gap-2 border-b border-border bg-surface2 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-text3">
-                  <span>Part detail</span>
-                  <span>Spec / colour</span>
-                  <span className="text-right">Hrs</span>
-                </div>
-                {parts.map((p) => (
-                  <div key={p.id} className="grid grid-cols-[1fr_120px_48px] gap-2 border-b border-border px-2.5 py-1 text-xs last:border-0">
-                    <span className="truncate">{p.detail}</span>
-                    <span className="truncate text-text3">{p.spec || '—'}</span>
-                    <span className="text-right tabular-nums text-text2">{p.hrs || 0}</span>
-                  </div>
+        <>
+          <FormSection title="Start from template">
+            <Field label="Product template" required>
+              <select
+                className={inputClass}
+                value={catId}
+                onChange={(e) => pickTemplate(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">— Select a template or build manually —</option>
+                {(catalogue ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} — {c.parts.length} part{c.parts.length === 1 ? '' : 's'}
+                  </option>
                 ))}
-              </div>
-              <div className="mt-1 text-[10px] text-text3">
-                {parts.length} fixed part{parts.length === 1 ? '' : 's'} from template — created automatically with this assembly.
-              </div>
-            </>
-          )}
-        </FormSection>
+              </select>
+            </Field>
+            {catId !== '' && parts.length > 0 && (
+              <>
+                <div className="mt-2 overflow-hidden rounded-md border border-border">
+                  <div className="grid grid-cols-[1fr_120px_48px] gap-2 border-b border-border bg-surface2 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-text3">
+                    <span>Part detail</span>
+                    <span>Spec / colour</span>
+                    <span className="text-right">Hrs</span>
+                  </div>
+                  {parts.map((p) => (
+                    <div key={p.id} className="grid grid-cols-[1fr_120px_48px] gap-2 border-b border-border px-2.5 py-1 text-xs last:border-0">
+                      <span className="truncate">{p.detail}</span>
+                      <span className="truncate text-text3">{p.spec || '—'}</span>
+                      <span className="text-right tabular-nums text-text2">{p.hrs || 0}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1 text-[10px] text-text3">
+                  {parts.length} fixed part{parts.length === 1 ? '' : 's'} from template — created automatically with this assembly.
+                </div>
+              </>
+            )}
+          </FormSection>
+
+          <FormSection title="Select from catalogue">
+            <Field label="Product catalogue">
+              <select
+                className={inputClass}
+                value={catRef}
+                onChange={(e) => pickCatRef(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">— Select a product or enter manually below —</option>
+                {(catalogue ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </Field>
+          </FormSection>
+        </>
       )}
 
       {/* DESCRIPTION */}

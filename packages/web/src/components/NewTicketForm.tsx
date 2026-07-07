@@ -28,6 +28,7 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<TType>('MADE');
   const [orderId, setOrderId] = useState<number | ''>('');
   const [catId, setCatId] = useState<number | ''>('');
+  const [catRef, setCatRef] = useState<number | ''>(''); // Assembly "Product catalogue" (fills description)
   const [detail, setDetail] = useState('');
   const [spec, setSpec] = useState('');
   const [drawing, setDrawing] = useState('');
@@ -45,6 +46,7 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
   function pickType(t: TType) {
     setType(t);
     setCatId(''); // catalogue/template picker is type-specific
+    setCatRef('');
     setStage(t === 'RAW' ? 'Ordered' : '1. Spec Required');
   }
 
@@ -57,6 +59,17 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
       setDrawing(c.productCode ?? '');
       setHrs(c.assemblyHrs ?? 0);
       setUnitPrice(c.unitPrice ?? 0);
+    }
+  }
+
+  // Assembly "Product catalogue" picker — fills the description from a catalogue product.
+  function pickCatRef(v: string) {
+    const idNum = v ? Number(v) : '';
+    setCatRef(idNum);
+    const c = catalogue?.find((x) => x.id === Number(v));
+    if (c) {
+      setDetail(`[${c.code ?? c.productCode}] ${c.name}`);
+      setDrawing(c.productCode ?? '');
     }
   }
 
@@ -159,12 +172,12 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
         </div>
       </FormSection>
 
-      {/* Catalogue picker — MADE only */}
-      {type === 'MADE' && (
+      {/* Catalogue picker — Slide (MADE) & Bought-in (RAW) */}
+      {type !== 'COMP' && (
         <FormSection title="Select from catalogue">
           <Field label="Product catalogue">
             <select className={inputClass} value={catId} onChange={(e) => pickCat(e.target.value)}>
-              <option value="">— Select a slide or enter manually below —</option>
+              <option value="">— Select a product or enter manually below —</option>
               {(catalogue ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.code ?? c.productCode})
@@ -175,37 +188,50 @@ export function NewTicketForm({ onClose }: { onClose: () => void }) {
         </FormSection>
       )}
 
-      {/* Template picker + parts preview — COMP only */}
+      {/* Assembly: template picker (parts) + catalogue picker (description) */}
       {type === 'COMP' && (
-        <FormSection title="Start from template">
-          <Field label="Product template">
-            <select className={inputClass} value={catId} onChange={(e) => pickCat(e.target.value)}>
-              <option value="">— Select template or build manually —</option>
-              {(catalogue ?? []).filter((c) => c.parts.length > 1).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.parts.length} parts
-                </option>
-              ))}
-            </select>
-          </Field>
-          {selectedTpl && selectedTpl.parts.length > 0 && (
-            <div className="mt-2 overflow-hidden rounded-lg border border-border">
-              <div className="grid grid-cols-[1fr_140px_56px] bg-surface2 px-3 py-1.5 text-[10px] font-semibold uppercase text-text3">
-                <span>Part detail</span><span>Spec / colour</span><span className="text-right">Hrs</span>
-              </div>
-              {selectedTpl.parts.map((p) => (
-                <div key={p.id} className="grid grid-cols-[1fr_140px_56px] border-t border-border px-3 py-1.5 text-xs">
-                  <span>{p.detail}</span>
-                  <span className="text-text3">{p.spec ?? '—'}</span>
-                  <span className="text-right tabular-nums text-text2">{p.hrs}</span>
+        <>
+          <FormSection title="Start from template">
+            <Field label="Product template">
+              <select className={inputClass} value={catId} onChange={(e) => pickCat(e.target.value)}>
+                <option value="">— Select a template or build manually —</option>
+                {(catalogue ?? []).filter((c) => c.parts.length > 1).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </Field>
+            {selectedTpl && selectedTpl.parts.length > 0 && (
+              <div className="mt-2 overflow-hidden rounded-lg border border-border">
+                <div className="grid grid-cols-[1fr_140px_56px] bg-surface2 px-3 py-1.5 text-[10px] font-semibold uppercase text-text3">
+                  <span>Part detail — edit spec &amp; hours as needed</span><span>Spec / colour</span><span className="text-right">Hrs</span>
                 </div>
-              ))}
-              <div className="px-3 py-1.5 text-[10px] text-text3">
-                {selectedTpl.parts.length} fixed parts from the template — the assembly is created as a COMP with one PART per piece.
+                {selectedTpl.parts.map((p) => (
+                  <div key={p.id} className="grid grid-cols-[1fr_140px_56px] border-t border-border px-3 py-1.5 text-xs">
+                    <span>{p.detail}</span>
+                    <span className="text-text3">{p.spec ?? '—'}</span>
+                    <span className="text-right tabular-nums text-text2">{p.hrs}</span>
+                  </div>
+                ))}
+                <div className="px-3 py-1.5 text-[10px] text-text3">
+                  {selectedTpl.parts.length} fixed parts from the template — the assembly is created as a COMP with one PART per piece.
+                </div>
               </div>
-            </div>
-          )}
-        </FormSection>
+            )}
+          </FormSection>
+
+          <FormSection title="Select from catalogue">
+            <Field label="Product catalogue">
+              <select className={inputClass} value={catRef} onChange={(e) => pickCatRef(e.target.value)}>
+                <option value="">— Select a product or enter manually below —</option>
+                {(catalogue ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.code ?? c.productCode})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </FormSection>
+        </>
       )}
 
       <FormSection title="Description">
