@@ -109,6 +109,13 @@ export interface Ticket {
   order?: Order;
 }
 
+export interface PackingItem {
+  name: string;
+  qty: number;
+  notes: string;
+  checked: boolean;
+}
+
 export interface Order {
   id: number;
   orderNumber: string;
@@ -123,6 +130,8 @@ export interface Order {
   themeImage: string | null;
   notes: string | null;
   value: number;
+  packingChecklist: PackingItem[] | null;
+  packingNotes: string | null;
   isDraft: boolean;
   tickets?: Ticket[];
   createdAt: string;

@@ -166,7 +166,8 @@ export function Ready() {
             <>
               <Button
                 onClick={() => setGate({ kind: 'family-pin', ticketIds: gate.ticketIds })}
-                className="border-amber bg-amber text-white hover:opacity-90"
+                className="hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-amber)', borderColor: 'var(--color-amber)', color: '#fff' }}
               >
                 ⚠ Manager Override — Despatch anyway
               </Button>

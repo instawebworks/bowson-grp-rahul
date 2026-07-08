@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { GRP_STAGES, nextStage, RAW_STAGES } from '@bowson/shared';
+import { nextStage } from '@bowson/shared';
 import {
   useAssignMould,
-  useChangeTicketStatus,
   useConfirmCure,
   useMoulds,
   useOrder,
@@ -12,6 +11,7 @@ import {
 } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
+import { TicketStatusSelect } from '../components/TicketStatusSelect';
 import { EditOrderForm } from '../components/EditOrderForm';
 import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
@@ -37,24 +37,11 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-function StatusSelect({ ticket, orderId }: { ticket: Ticket; orderId: number }) {
-  const change = useChangeTicketStatus(orderId);
-  const stages = ticket.type === 'RAW' ? RAW_STAGES : GRP_STAGES;
+function StatusSelect({ ticket }: { ticket: Ticket }) {
   // COMP status is derived from its parts; show it read-only as a pill.
   if (ticket.type === 'COMP') return <StatusPill status={ticket.status} />;
-  return (
-    <select
-      value={(stages as readonly string[]).includes(ticket.status) ? ticket.status : ''}
-      disabled={change.isPending}
-      onChange={(e) => change.mutate({ ticketId: ticket.id, status: e.target.value })}
-      className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
-    >
-      {!(stages as readonly string[]).includes(ticket.status) && <option value="">{ticket.status}</option>}
-      {stages.map((s) => (
-        <option key={s} value={s}>{s}</option>
-      ))}
-    </select>
-  );
+  // Gated select: packing checklist on → Packing, family gate on → Despatched.
+  return <TicketStatusSelect ticket={ticket} />;
 }
 
 function MouldCureCell({
@@ -152,7 +139,7 @@ function TicketRow({
         {ticket.detail}
         {ticket.spec && <span className="ml-2 text-[11px] text-text3">{ticket.spec}</span>}
       </td>
-      <td className="px-3 py-2"><StatusSelect ticket={ticket} orderId={orderId} /></td>
+      <td className="px-3 py-2"><StatusSelect ticket={ticket} /></td>
       <td className="px-3 py-2"><ProgressBar pct={ticket.pct} /></td>
       <td className="px-3 py-2"><MouldCureCell ticket={ticket} orderId={orderId} moulds={moulds} now={now} /></td>
       <td className="px-3 py-2 tabular-nums">{money(ticket.netPrice)}</td>

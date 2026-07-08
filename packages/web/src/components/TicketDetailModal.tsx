@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { GRP_STAGES, RAW_STAGES, nextStage } from '@bowson/shared';
+import { nextStage } from '@bowson/shared';
 import {
   useAssignMould,
   useAssignTicket,
   useAuditFor,
-  useChangeTicketStatus,
   useConfirmCure,
   useMoulds,
   useOperatives,
@@ -13,6 +12,7 @@ import {
   useToggleTimer,
 } from '../lib/hooks';
 import { Button, Modal, ProgressBar, StatusPill } from '../components/ui';
+import { TicketStatusSelect } from './TicketStatusSelect';
 import { cureState, fmtCureMins, fmtElapsed, initials, money } from '../lib/format';
 
 const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
@@ -26,7 +26,6 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const { data: audit } = useAuditFor('ticket', ticketId);
   const orderId = t?.orderId;
 
-  const changeStatus = useChangeTicketStatus(orderId);
   const assign = useAssignTicket();
   const assignMould = useAssignMould(orderId);
   const setCure = useSetCure(orderId);
@@ -57,7 +56,6 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const cure = t ? cureState(t, now) : null;
   const isRaw = t?.type === 'RAW';
   const isComp = t?.type === 'COMP';
-  const stages = isRaw ? RAW_STAGES : GRP_STAGES;
 
   return (
     <Modal
@@ -88,15 +86,10 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
               {isComp ? (
                 <><StatusPill status={t.status} /><span className="text-[11px] text-text3">Rolled up from parts</span></>
               ) : (
-                <select
-                  value={(stages as readonly string[]).includes(t.status) ? t.status : ''}
-                  disabled={changeStatus.isPending}
-                  onChange={(e) => changeStatus.mutate({ ticketId, status: e.target.value })}
+                <TicketStatusSelect
+                  ticket={t}
                   className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
-                >
-                  {!(stages as readonly string[]).includes(t.status) && <option value="">{t.status}</option>}
-                  {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                />
               )}
               <div className="w-40"><ProgressBar pct={t.pct} /></div>
             </div>

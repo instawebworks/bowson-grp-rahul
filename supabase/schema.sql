@@ -78,6 +78,8 @@ create table "orders" (
   "themeImage"  text,
   "notes"       text,
   "value"       double precision not null default 0,
+  "packingChecklist" jsonb,
+  "packingNotes"     text,
   "isDraft"     boolean not null default true,
   "createdAt"   timestamptz not null default now(),
   "updatedAt"   timestamptz not null default now(),

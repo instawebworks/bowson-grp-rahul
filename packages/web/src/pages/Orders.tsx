@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ORDER_STATS } from '@bowson/shared';
-import { useOrders, useSetOrderStatus } from '../lib/hooks';
+import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
 import { Button, Card, Content, PageHeader, StatusPill, Table } from '../components/ui';
 import { daysToDeadline, money } from '../lib/format';
@@ -71,8 +71,26 @@ function countdown(deadline: string | null): { text: string; cls: string } | nul
 export function Orders({ title = 'All Orders', sub, statuses }: Props) {
   const { data, isLoading, error } = useOrders();
   const setStatus = useSetOrderStatus();
+  const release = useReleaseOrder();
   const navigate = useNavigate();
   const { canManage } = useAuth();
+
+  /** Pending → In Progress releases the order (issues ticket numbers) after a
+   * confirm — ported from quickSetOrderStatus. */
+  function changeStatus(o: Order, value: string) {
+    if (o.status === value) return;
+    if (o.status === 'Pending' && value === 'In Progress') {
+      const all = o.tickets ?? [];
+      const unissued = all.filter((t) => t.tn == null).length;
+      const msg = unissued
+        ? `Release order ${o.orderNumber} to production?\n\nThis will issue ${unissued} ticket number${unissued !== 1 ? 's' : ''} and cannot be undone.`
+        : `Release order ${o.orderNumber} to production?\n\n${all.length} ticket${all.length !== 1 ? 's are' : ' is'} already numbered.\n\nThis cannot be undone.`;
+      if (!window.confirm(msg)) return;
+      release.mutate(o.id);
+      return;
+    }
+    setStatus.mutate({ id: o.id, status: value });
+  }
 
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -177,7 +195,8 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                     {inlineStatus && canManage ? (
                       <select
                         value={o.status}
-                        onChange={(e) => setStatus.mutate({ id: o.id, status: e.target.value })}
+                        disabled={release.isPending}
+                        onChange={(e) => changeStatus(o, e.target.value)}
                         className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
                       >
                         <option value="Pending">Pending</option>

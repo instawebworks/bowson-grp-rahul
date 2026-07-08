@@ -63,7 +63,20 @@ export const orderInputSchema = z.object({
   isDraft: z.boolean().default(true),
 });
 export type OrderInput = z.infer<typeof orderInputSchema>;
-export const orderUpdateSchema = orderInputSchema.partial();
+
+/** One hardware line of the packing checklist (ported from packing_checklist). */
+export const packingItemSchema = z.object({
+  name: z.string().min(1),
+  qty: z.number().int().nonnegative().default(0),
+  notes: z.string().default(''),
+  checked: z.boolean().default(false),
+});
+export type PackingItem = z.infer<typeof packingItemSchema>;
+
+export const orderUpdateSchema = orderInputSchema.partial().extend({
+  packingChecklist: z.array(packingItemSchema).optional(),
+  packingNotes: z.string().nullish(),
+});
 
 // ─── Ticket ────────────────────────────────────────────────────────────────
 export const ticketInputSchema = z.object({
@@ -120,6 +133,8 @@ export type CatalogueInput = z.infer<typeof catalogueInputSchema>;
 export const statusChangeSchema = z.object({
   status: ticketStatusSchema,
   note: z.string().nullish(),
+  /** Manager-PIN-authorised override of the family-ready gate (→ Despatched). */
+  managerOverride: z.boolean().default(false),
 });
 
 export const assignOperativesSchema = z.object({

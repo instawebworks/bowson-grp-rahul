@@ -10,6 +10,7 @@ import {
 import { db, unwrap } from '../supabase.js';
 import { PARSE_FAILED, parse, parseId } from '../lib/validate.js';
 import { recomputeOrder, syncComp } from '../services/recompute.js';
+import { backfillOrderTns, nextTn } from '../services/tn.js';
 
 const SELECT = '*, customer:customers(*), tickets:tickets(*, assignments:ticket_assignments(*))';
 
@@ -38,15 +39,6 @@ interface CatPart {
   price: number;
   drawing: string | null;
   mouldId: number | null;
-}
-
-/** Next ticket number = max(tn) + 1. */
-async function nextTn(): Promise<number> {
-  const row = unwrap(
-    await db.from('tickets').select('tn').not('tn', 'is', null)
-      .order('tn', { ascending: false }).limit(1).maybeSingle(),
-  ) as { tn: number } | null;
-  return (row?.tn ?? 0) + 1;
 }
 
 /** Convert nullable Date inputs to ISO strings for Supabase. */
@@ -94,14 +86,49 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     const data = parse(orderUpdateSchema, req.body, reply);
     if (data === PARSE_FAILED) return;
     const existing = unwrap(
-      await db.from('orders').select('id').eq('id', id).is('deletedAt', null).maybeSingle(),
-    );
+      await db.from('orders').select('id, status').eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as { id: number; status: string } | null;
     if (!existing) return reply.notFound('Order not found');
     unwrap(await db.from('orders').update(serializeOrder(data)).eq('id', id).select('id'));
     // Target production week flows down to the order's tickets.
     if (data.wc !== undefined) {
       unwrap(await db.from('tickets').update({ wc: data.wc }).eq('orderId', id).is('deletedAt', null).select('id'));
     }
+    // Leaving Pending issues ticket numbers (ported from quickSetOrderStatus).
+    if (existing.status === 'Pending' && data.status && data.status !== 'Pending') {
+      const issued = await backfillOrderTns(id);
+      unwrap(
+        await db.from('audit_log').insert({
+          entityType: 'order', entityId: id, field: 'status',
+          fromValue: 'Pending', toValue: data.status,
+          note: issued ? `Released — ${issued} ticket number${issued === 1 ? '' : 's'} issued` : null,
+        }).select('id'),
+      );
+    }
+    return unwrap(await db.from('orders').select(SELECT).eq('id', id).is('tickets.deletedAt', null).maybeSingle());
+  });
+
+  // Release a Pending order to production — sets In Progress and issues ticket
+  // numbers to all un-numbered tickets (ported from reviewPendingOrders).
+  app.post('/:id/release', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const existing = unwrap(
+      await db.from('orders').select('status').eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as { status: string } | null;
+    if (!existing) return reply.notFound('Order not found');
+    if (existing.status !== 'Pending') {
+      return reply.badRequest(`Only Pending orders can be released (order is ${existing.status})`);
+    }
+    unwrap(await db.from('orders').update({ status: 'In Progress' }).eq('id', id).select('id'));
+    const issued = await backfillOrderTns(id);
+    unwrap(
+      await db.from('audit_log').insert({
+        entityType: 'order', entityId: id, field: 'status',
+        fromValue: 'Pending', toValue: 'In Progress',
+        note: `Released to production — ${issued} ticket number${issued === 1 ? '' : 's'} issued`,
+      }).select('id'),
+    );
     return unwrap(await db.from('orders').select(SELECT).eq('id', id).is('tickets.deletedAt', null).maybeSingle());
   });
 

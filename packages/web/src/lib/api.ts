@@ -23,16 +23,30 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
+    let body: unknown = null;
     try {
-      const body = await res.json();
-      message = body.message ?? body.error ?? message;
+      body = await res.json();
+      const b = body as { message?: string; error?: string };
+      message = b.message ?? b.error ?? message;
     } catch {
       /* ignore */
     }
-    throw new Error(message);
+    throw new ApiError(message, res.status, body);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** API error carrying the parsed response body (e.g. workflow-gate 409s). */
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
 }
 
 export const apiClient = {

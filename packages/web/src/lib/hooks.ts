@@ -9,6 +9,7 @@ import type {
   Mould,
   Operative,
   Order,
+  PackingItem,
   Ticket,
 } from './types';
 
@@ -29,6 +30,24 @@ export interface OrderUpdateInput {
   deadline?: string | null;
   wc?: string | null;
   notes?: string | null;
+  packingChecklist?: PackingItem[];
+  packingNotes?: string | null;
+}
+
+/** Release a Pending order to production — issues ticket numbers. */
+export function useReleaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: number) => apiClient.post<Order>(`/api/orders/${orderId}/release`, {}),
+    onSuccess: (_data, orderId) => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['ticket'] });
+      qc.invalidateQueries({ queryKey: ['board-tickets'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
 }
 
 export function useUpdateOrder(orderId: number) {
@@ -238,8 +257,8 @@ export function useConfirmCure(orderId?: number) {
 export function useChangeTicketStatus(orderId?: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ ticketId, status, note }: { ticketId: number; status: string; note?: string }) =>
-      apiClient.post(`/api/tickets/${ticketId}/status`, { status, note }),
+    mutationFn: ({ ticketId, status, note, managerOverride }: { ticketId: number; status: string; note?: string; managerOverride?: boolean }) =>
+      apiClient.post(`/api/tickets/${ticketId}/status`, { status, note, managerOverride }),
     onSuccess: () => {
       if (orderId != null) qc.invalidateQueries({ queryKey: ['order', orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });

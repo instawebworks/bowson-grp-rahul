@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { GRP_STAGES } from '@bowson/shared';
-import { useTickets } from '../lib/hooks';
-import { Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
+import { useOrders, useTickets } from '../lib/hooks';
+import { Button, Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
 import { TicketDetailModal } from '../components/TicketDetailModal';
+import { PendingReleaseModal } from '../components/PendingReleaseModal';
+import { useAuth } from '../lib/auth';
 import { fmtDate } from '../lib/format';
 import type { Ticket } from '../lib/types';
 
@@ -27,7 +29,16 @@ export function Tickets({ title = 'All Tickets', statuses }: { title?: string; s
   const [stage, setStage] = useState('');
   const [showDespatched, setShowDespatched] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const locked = !!statuses;
+  const { canManage } = useAuth();
+
+  // Pending-order release banner (All Tickets view only, ported from renderTickets).
+  const { data: orders } = useOrders();
+  const pendingOrders = useMemo(
+    () => (locked ? [] : (orders ?? []).filter((o) => o.status === 'Pending' && !o.isDraft)),
+    [orders, locked],
+  );
 
   const all = data ?? [];
 
@@ -68,11 +79,29 @@ export function Tickets({ title = 'All Tickets', statuses }: { title?: string; s
   return (
     <>
       {detailId != null && <TicketDetailModal ticketId={detailId} onClose={() => setDetailId(null)} />}
+      {reviewOpen && <PendingReleaseModal orders={pendingOrders} onClose={() => setReviewOpen(false)} />}
       <PageHeader
         title={title}
         sub={`${rows.length} ticket${rows.length === 1 ? '' : 's'}`}
       />
       <Content>
+        {pendingOrders.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber bg-amber-l px-3.5 py-2.5">
+            <div>
+              <div className="text-xs font-bold text-amber">
+                ⏳ {pendingOrders.length} Pending Order{pendingOrders.length !== 1 ? 's' : ''} — ticket numbers not yet issued
+              </div>
+              <div className="mt-0.5 text-[11px] text-text2">
+                {pendingOrders.map((o) => (
+                  <span key={o.id} className="mr-2">{o.orderNumber} — {o.siteName ?? '—'}</span>
+                ))}
+              </div>
+            </div>
+            {canManage && (
+              <Button variant="primary" onClick={() => setReviewOpen(true)}>Review &amp; Advance →</Button>
+            )}
+          </div>
+        )}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket / detail…" className={`${ctrl} w-64`} />
           {!locked && (

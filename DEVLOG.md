@@ -1184,3 +1184,79 @@ parity phases.
 - **Phase 2:** Pending release flow ("Review & Advance") + tn back-fill bug +
   packing checklist gate + family gating on ordinary status changes to
   Despatched (gaps #3 #4 #5). Then P3 → P5.
+
+---
+
+## 2026-07-08 — Phase 2: release flow, tn bug fix, packing + family gates (gaps #3 #4 #5)
+
+**Done**
+- **tn=null bug fixed** (three parts):
+  - `POST /api/tickets` now issues a ticket number at creation when the order
+    is already in production (was: never set tn at all). Tickets on Pending
+    orders deliberately stay `tn=null` until release (prototype behaviour).
+  - New **`POST /api/orders/:id/release`** — Pending → In Progress, issues tns
+    to every un-numbered ticket, audit note "Released to production — N ticket
+    numbers issued". 400 if the order isn't Pending.
+  - `PATCH /api/orders/:id` leaving Pending (e.g. the inline dropdown) also
+    back-fills tns + audits. tn logic extracted to `services/tn.ts`
+    (`nextTn`, `backfillOrderTns`).
+  - **Live data repaired:** one-off SQL back-fill numbered ~60 existing
+    null-tn tickets on already-released orders.
+- **Pending release flow (ported from reviewPendingOrders):** All Tickets now
+  shows an amber "⏳ N Pending Orders" banner (lists them) with a manager-only
+  **Review & Advance →** button → `PendingReleaseModal` (order cards: site,
+  N tickets · hrs · due; View order / **Release to production** → confirm
+  modal "issues N ticket numbers… cannot be undone"). The Orders inline
+  status dropdown Pending→In Progress asks the same confirm and calls release.
+- **Packing checklist gate (ported from showPackingChecklist):** orders gain
+  `packingChecklist jsonb` + `packingNotes text` (migration applied live via
+  the Kong `/pg/query` fallback; schema.sql updated). Moving a MADE/COMP
+  ticket into "9. Packing" from any status dropdown opens
+  `PackingChecklistModal` — hardware rows (tick / qty / notes) seeded from the
+  order's saved checklist → catalogue hardware (matched by drawing-ref prefix)
+  → default Bolt Pack / Slide Feet / Flange Supports; additional-notes
+  textarea; "Confirm & Advance to Packing" saves to the order then advances.
+- **Family gate on status changes (ported from doAdvance):**
+  `POST /api/tickets/:id/status` now 409s (`gate:'family'`, notReady list)
+  when a COMP/PART jumps to Despatched with its family not all at Ready —
+  server-side, so every UI path is covered. Dropdowns show the "Assembly not
+  ready to despatch" modal with **⚠ Manager Override** → PIN → retry with
+  `managerOverride` (audited "Manager override — family not ready"). Status
+  changes to Despatched now also stamp `despatchDate` (not just `completed`).
+- **Plumbing:** shared `TicketStatusSelect` (gated dropdown) now used by
+  Order detail + Ticket detail modal; web `ApiError` carries the parsed
+  response body so the UI can react to gate 409s; `statusChangeSchema` gains
+  `managerOverride`; `packingItemSchema` + order-update schema extended.
+- Fix: amber "Manager Override" buttons had white-on-white text (Tailwind
+  utility-order conflict) — switched to inline `var(--color-amber)` style.
+
+**Verified**
+- All packages typecheck.
+- **API (live DB), 8 groups:** Pending tickets tn=null on both creation
+  paths; release → In Progress + unique tns + audit; double-release 400;
+  post-release tickets auto-numbered; PATCH-out-of-Pending back-fills;
+  family gate 409 for COMP and PART with override + despatchDate + audit
+  note; MADE ungated; packing checklist + notes persist.
+- **UI (Playwright):** banner → Review & Advance → release confirm → order
+  In Progress with tns issued; QC ticket dropdown → Packing → checklist
+  modal (defaults shown) → confirm → advanced + checklist/notes saved on
+  order; PART dropdown → Despatched → family modal → Manager Override →
+  PIN 1234 → despatched with date stamp. No page errors (the one console
+  entry is the browser logging the deliberate 409 gate response).
+
+**Notes**
+- Test-run hiccup: the first UI run clicked "Release to production" on the
+  first listed real pending order (order 21, zero tickets) — reverted to
+  Pending and the stray audit row removed; script then targeted its own row.
+- Banner wording changed from the prototype's "tickets hidden until released"
+  to "ticket numbers not yet issued" — the prototype never actually hid them
+  in All Tickets, and neither do we.
+- QC-Ref gate (QC → Packing requires a QC reference) not ported — needs a
+  `qcRef` ticket field; slotted for Phase 3 alongside inline advance buttons.
+
+**Next up**
+- **Phase 3:** bulk ops on All Tickets (advance selected / bulk status /
+  bulk assign / inline row advance / per-order groups), In Production row
+  actions + columns + export, per-column filters, manager
+  return-to-production, PIN-gated delete order/ticket UI, edit ticket fields
+  (gaps #6 #7 #8 #11 #12 #13). Then P4 → P5.

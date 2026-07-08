@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { db, unwrap } from '../supabase.js';
 import { PARSE_FAILED, parse, parseId } from '../lib/validate.js';
 import { recomputeForTicket, recomputeOrder } from '../services/recompute.js';
+import { nextTn } from '../services/tn.js';
 
 const SELECT =
   '*, order:orders(*, customer:customers(*)), mould:moulds(*), assignments:ticket_assignments(*, operative:operatives(*)), time:time_sessions(*)';
@@ -67,14 +68,17 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     const data = parse(ticketInputSchema, req.body, reply);
     if (data === PARSE_FAILED) return;
     const order = unwrap(
-      await db.from('orders').select('id').eq('id', data.orderId).is('deletedAt', null).maybeSingle(),
-    );
+      await db.from('orders').select('id, status').eq('id', data.orderId).is('deletedAt', null).maybeSingle(),
+    ) as { id: number; status: string } | null;
     if (!order) return reply.badRequest('orderId does not reference an existing order');
 
     const status = data.status ?? defaultStatus(data.type);
     const netPrice = (data.unitPrice ?? 0) * (data.qty ?? 1);
+    // Ticket numbers are only issued once the order is in production; tickets
+    // on a Pending order stay tn=null until release (prototype parity).
+    const tn = order.status === 'Pending' ? null : await nextTn();
     const created = unwrap(
-      await db.from('tickets').insert({ ...data, status, pct: AUTO_PCT[status] ?? 0, netPrice })
+      await db.from('tickets').insert({ ...data, tn, status, pct: AUTO_PCT[status] ?? 0, netPrice })
         .select('id').single(),
     );
     await recomputeForTicket({ orderId: data.orderId, compParentId: data.compParentId ?? null });
@@ -109,16 +113,35 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     if (body === PARSE_FAILED) return;
 
     const existing = unwrap(
-      await db.from('tickets').select('status, orderId, compParentId')
+      await db.from('tickets').select('id, tn, type, detail, status, pct, netPrice, orderId, compParentId')
         .eq('id', id).is('deletedAt', null).maybeSingle(),
-    ) as ({ status: string } & TicketRef) | null;
+    ) as ({ id: number; tn: number | null; type: string; detail: string; status: string; pct: number; netPrice: number } & TicketRef) | null;
     if (!existing) return reply.notFound('Ticket not found');
 
     const to = body.status;
+
+    // Family gate (ported from doAdvance): a COMP / PART can only jump to
+    // Despatched when its whole family is at Ready to Despatch, unless a
+    // manager override is supplied.
+    if (
+      to === 'Despatched' && !body.managerOverride &&
+      (existing.type === 'COMP' || existing.type === 'PART')
+    ) {
+      const family = unwrap(
+        await db.from('tickets').select('id, tn, type, detail, status, pct, netPrice, compParentId, orderId')
+          .eq('orderId', existing.orderId).is('deletedAt', null),
+      ) as (typeof existing)[];
+      const check = familyReadyCheck(existing, family);
+      if (!check.ready) {
+        return reply.status(409).send({ gate: 'family', notReady: check.notReady });
+      }
+    }
+
     const update: Record<string, unknown> = {
       status: to,
       pct: pctForStatus(to),
       completed: to === 'Despatched' ? new Date().toISOString() : null,
+      despatchDate: to === 'Despatched' ? new Date().toISOString().slice(0, 10) : null,
     };
     unwrap(await db.from('tickets').update(update).eq('id', id).select('id'));
 
@@ -130,7 +153,7 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
         field: 'status',
         fromValue: existing.status,
         toValue: to,
-        note: body.note ?? null,
+        note: body.note ?? (to === 'Despatched' && body.managerOverride ? 'Manager override — family not ready' : null),
       }).select('id'),
     );
 
