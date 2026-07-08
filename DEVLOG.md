@@ -1344,3 +1344,67 @@ the long-flagged bugs (COMP delete orphaning parts).
   16-week planner, Export Hours CSV, current-week proration (gaps #9 #10).
 - Then **Phase 5:** board extras, order-detail extras, SKU generator,
   unlinked-catalogue linking (#14–#17).
+
+---
+
+## 2026-07-08 — Phase 4: dashboard blockers + planner overrides (gaps #9 #10)
+
+**Done**
+- **Schema:** operatives gain `dayHrs jsonb` — per-week day-hour overrides
+  keyed `"<mondayIso>_d<dayIdx>"` (0=Mon…6=Sun), exactly the prototype's
+  `op.day_hrs` shape. Migration applied live via /pg/query; schema.sql +
+  operative Zod schema updated.
+- **Shared** (`schedule.ts`): `PLANNER_WEEKS = 16`, `opDayDefault`,
+  `getOpDayHrs` (weekends default 0 unless overridden), `opWeekTotal`,
+  `todayDayIdx`, and `weekCapacityFor` with **current-week proration** (days
+  already passed contribute nothing) — all ported 1:1.
+- **API:**
+  - `/api/dashboard` now returns `blockers.maintenance` (tickets at
+    "3. Queue - Awaiting Mould" whose mould is in Maintenance, with mould
+    ref + notes), `blockers.noMould` (mould-needing tickets at stages 1–3
+    with none assigned, live orders only), and `overdueOrders`
+    (deadline past, not despatched/completed/cancelled, with `daysOver`).
+  - `/api/schedule` capacity is now **per week** — day patterns + per-week
+    overrides + current-week proration — over the 16-week horizon.
+- **Dashboard:** ported the prototype's alert panels — red **"⚠ Cannot
+  Produce — Mould in Maintenance"** and amber **"⚠ Cannot Produce — No Mould
+  Assigned"** (top 5 rows with ticket/order/stage + mould badge, "…and N
+  more", "Open Mould Planner →", row click → order) and the **⚠ Overdue
+  Orders** table (order/customer/status/deadline/+Nd, click-through).
+- **Production Planner:**
+  - Grid now spans **16 weeks** (+ any ticket weeks).
+  - Day cells are **per-week overrides** (ported from editOpDay): editor
+    saves to `dayHrs` for that week only, presets, **↩ Reset to default**,
+    saving the default clears the override; amber = override, red = day off;
+    **past days are locked** (dimmed, not clickable).
+  - Week totals + weekly schedule cards use the per-week prorated capacity
+    ("this week — remaining days" tag on the current week).
+  - History tab gains **Export N weeks to CSV** (from/to date range →
+    Operative / Skills / W/C / Mon–Fri / Total rows, skipping zero weeks) —
+    ported from exportHoursCSV.
+
+**Verified**
+- All packages typecheck.
+- **API (live DB):** maintenance blocker carries mould ref/notes; no-mould
+  blocker lists the ticket; overdue order shows daysOver=5; dayHrs override
+  persists; /api/schedule returns 17 weeks with the override week's capacity
+  reduced (217.5 < 225) and the current week prorated (135h of 225h on a Wed).
+- **UI (Playwright):** dashboard renders both panels + overdue row; planner
+  shows 18 week columns; day-cell click → editor → Off → cell turns red
+  "Off"; reopen → Reset to default restores 7.5h; History → Export downloads
+  `bowson_hours_<from>_to_<to>.csv`. Zero console/page errors.
+
+**Notes**
+- The planner's old behaviour (cell edits changed the operative's *standard*
+  pattern for all weeks) moved to Operatives & Settings only; planner cells
+  are now single-week overrides, matching the prototype.
+- The prototype's separate History hours *grid* (per-op day cells over a
+  range) wasn't ported — our History keeps the utilisation summary + the CSV
+  export, which covers the data need.
+
+**Next up**
+- **Phase 5 (final):** Board right-click context menu + bulk stage move +
+  cure prompt on drag into Gel/Lam + order colour palettes + view spec from
+  card; order-detail bulk advance / schedule suggestion / quick
+  add-to-catalogue; catalogue SKU generator; Moulds "Unlinked Catalogue"
+  direct linking (gaps #14–#17).

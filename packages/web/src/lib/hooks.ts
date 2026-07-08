@@ -419,6 +419,7 @@ export interface OperativeFormInput {
   skills: string[];
   defaultHrs?: number | null;
   dayPattern?: number[];
+  dayHrs?: Record<string, number>;
 }
 
 export function useCreateOperative() {

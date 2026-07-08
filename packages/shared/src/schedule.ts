@@ -57,3 +57,64 @@ export function nextWeeks(n: number, from: Date = new Date()): string[] {
   }
   return out;
 }
+
+/** Planner horizon (ported from PLANNER_WEEKS). */
+export const PLANNER_WEEKS = 16;
+
+// ─── Per-week operative day hours (ported from getOpDayHrs / weekCapacity) ──
+const DAY_HRS_DEFAULT = 7.5; // HRS_PER_DAY (kept local to avoid an import cycle)
+
+export interface OperativeHoursLike {
+  defaultHrs?: number | null;
+  dayPattern?: number[] | null;
+  /** Per-week overrides keyed "<mondayIso>_d<dayIdx>" (0=Mon … 6=Sun). */
+  dayHrs?: Record<string, number> | null;
+}
+
+/** An operative's default hours for a weekday (no override applied). */
+export function opDayDefault(op: OperativeHoursLike, dayIdx: number): number {
+  if (dayIdx >= 5) return 0; // weekends default off
+  const pat = op.dayPattern ?? [];
+  return pat[dayIdx] ?? op.defaultHrs ?? DAY_HRS_DEFAULT;
+}
+
+/** Operative hours for a specific day of a specific week (Monday-ISO key). */
+export function getOpDayHrs(op: OperativeHoursLike, weekKey: string, dayIdx: number): number {
+  const val = (op.dayHrs ?? {})[`${weekKey}_d${dayIdx}`];
+  return val !== undefined ? val : opDayDefault(op, dayIdx);
+}
+
+/** An operative's Mon–Fri total for a week. */
+export function opWeekTotal(op: OperativeHoursLike, weekKey: string): number {
+  let t = 0;
+  for (let d = 0; d < 5; d++) t += getOpDayHrs(op, weekKey, d);
+  return t;
+}
+
+/** Today's day index in our Mon-first convention (0=Mon … 6=Sun). */
+export function todayDayIdx(today: Date = new Date()): number {
+  const js = today.getDay(); // 0=Sun
+  return js === 0 ? 6 : js - 1;
+}
+
+/**
+ * Total available hours across operatives for a week. The current week is
+ * prorated — days already passed contribute nothing (ported from weekCapacity).
+ */
+export function weekCapacityFor(
+  ops: OperativeHoursLike[],
+  weekKey: string,
+  today: Date = new Date(),
+): number {
+  const curKey = isoDate(mondayOf(today));
+  const isCurrent = weekKey === curKey;
+  const startDay = isCurrent ? todayDayIdx(today) : 0;
+  return ops.reduce((sum, op) => {
+    let total = 0;
+    for (let d = 0; d < 7; d++) {
+      if (isCurrent && d < startDay) continue;
+      total += getOpDayHrs(op, weekKey, d);
+    }
+    return sum + total;
+  }, 0);
+}

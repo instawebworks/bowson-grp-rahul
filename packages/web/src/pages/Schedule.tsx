@@ -1,13 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
-  HRS_PER_DAY,
   LIVE_STATUSES,
+  PLANNER_WEEKS,
   STAGE_HRS_REMAINING,
   formatWc,
+  getOpDayHrs,
+  isoDate,
+  mondayOf,
   nextWeeks,
+  opDayDefault,
+  todayDayIdx,
   wcForDeadline,
   wcKey,
-  type GrpStage,
+  weekCapacityFor,
 } from '@bowson/shared';
 import { useOperatives, useSchedule, useSettings, useTickets, useUpdateOperative } from '../lib/hooks';
 import { OperativeForm } from '../components/OperativeForm';
@@ -28,13 +33,6 @@ const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   PART: { bg: '#f3f0fd', color: '#4a42b0' },
 };
 
-/** Standard hours for an operative on weekday di (0=Mon..4=Fri). */
-function opDayHrs(op: Operative, di: number): number {
-  const p = op.dayPattern;
-  if (p && p.length > di && p[di] != null) return p[di]!;
-  return op.defaultHrs ?? HRS_PER_DAY;
-}
-
 /** The production week key a ticket belongs to (its wc, else derived from the deadline). */
 function ticketWeekKey(t: Ticket): string {
   const k = wcKey(t.wc);
@@ -51,17 +49,18 @@ export function Schedule() {
 
   const [tab, setTab] = useState<'planner' | 'history'>('planner');
   const [editSkills, setEditSkills] = useState<Operative | null>(null);
-  const [editCell, setEditCell] = useState<{ op: Operative; di: number } | null>(null);
+  const [editCell, setEditCell] = useState<{ op: Operative; weekKey: string; di: number } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
 
-  const ops = operatives ?? [];
+  const ops = useMemo(() => operatives ?? [], [operatives]);
   const allTickets = tickets ?? [];
-  const curKey = wcKey(nextWeeks(1)[0]!);
+  const curKey = isoDate(mondayOf(new Date()));
+  const todayIdx = todayDayIdx();
 
-  // Weeks to show: next 8 + any weeks that have tickets.
+  // Weeks to show: the 16-week planner horizon + any weeks that have tickets.
   const weeks = useMemo(() => {
     const labels = new Map<string, string>();
-    for (const wc of nextWeeks(8)) labels.set(wcKey(wc), wc);
+    for (const wc of nextWeeks(PLANNER_WEEKS)) labels.set(wcKey(wc), wc);
     for (const t of allTickets) {
       if (HIDDEN.includes(t.status)) continue;
       const key = ticketWeekKey(t);
@@ -70,7 +69,12 @@ export function Schedule() {
     return [...labels.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, label]) => ({ key, label }));
   }, [allTickets]);
 
-  const weekCapacity = ops.reduce((s, op) => s + [0, 1, 2, 3, 4].reduce((ss, di) => ss + opDayHrs(op, di), 0), 0);
+  // Per-week available hours (day patterns + per-week overrides; current week prorated).
+  const capacityFor = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const w of weeks) map.set(w.key, Math.round(weekCapacityFor(ops, w.key) * 10) / 10);
+    return (key: string) => map.get(key) ?? 0;
+  }, [weeks, ops]);
 
   const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
   const committedFor = (key: string) =>
@@ -83,12 +87,22 @@ export function Schedule() {
   const ticketsFor = (key: string) =>
     allTickets.filter((t) => !HIDDEN.includes(t.status) && ticketWeekKey(t) === key);
 
+  /** A past day can no longer be planned (ported from editOpDay's guard). */
+  const isPastDay = (weekKey: string, di: number) =>
+    weekKey < curKey || (weekKey === curKey && di < todayIdx);
+
+  /** Save a per-week override; saving the default value clears the override. */
   function saveCell(hrs: number) {
     if (!editCell) return;
-    const { op, di } = editCell;
-    const pat = op.dayPattern && op.dayPattern.length >= 7 ? [...op.dayPattern] : [HRS_PER_DAY, HRS_PER_DAY, HRS_PER_DAY, HRS_PER_DAY, HRS_PER_DAY, 0, 0];
-    pat[di] = Math.max(0, hrs);
-    updateOp.mutate({ id: op.id, input: { name: op.name, skills: op.skills, defaultHrs: op.defaultHrs, dayPattern: pat } });
+    const { op, weekKey, di } = editCell;
+    const key = `${weekKey}_d${di}`;
+    const next: Record<string, number> = { ...(op.dayHrs ?? {}) };
+    if (hrs === opDayDefault(op, di)) delete next[key];
+    else next[key] = Math.max(0, hrs);
+    updateOp.mutate({
+      id: op.id,
+      input: { name: op.name, skills: op.skills, defaultHrs: op.defaultHrs, dayPattern: op.dayPattern, dayHrs: next },
+    });
     setEditCell(null);
   }
 
@@ -112,7 +126,7 @@ export function Schedule() {
         </div>
 
         {tab === 'history' ? (
-          <History />
+          <History ops={ops} />
         ) : (
           <>
             {/* Capacity grid */}
@@ -153,13 +167,25 @@ export function Schedule() {
                         </div>
                       </td>
                       {weeks.map((w) => DAYS.map((_, di) => {
-                        const hrs = opDayHrs(op, di);
+                        const hrs = getOpDayHrs(op, w.key, di);
+                        const override = (op.dayHrs ?? {})[`${w.key}_d${di}`] !== undefined;
                         const off = hrs === 0;
+                        const past = isPastDay(w.key, di);
+                        const editable = canManage && !past;
                         return (
                           <td key={`${w.key}-${di}`} className={`p-0.5 ${di === 0 ? 'border-l-2 border-border' : ''}`}>
                             <div
-                              onClick={() => canManage && setEditCell({ op, di })}
-                              className={`rounded px-1.5 py-1 text-center text-[11px] font-semibold ${canManage ? 'cursor-pointer' : ''} ${off ? 'bg-red/10 text-red' : 'text-text2 hover:bg-teal-l/50'}`}
+                              onClick={() => editable && setEditCell({ op, weekKey: w.key, di })}
+                              title={override ? 'Override applied — click to change' : undefined}
+                              className={`rounded px-1.5 py-1 text-center text-[11px] font-semibold ${editable ? 'cursor-pointer' : ''} ${
+                                past
+                                  ? 'text-text3 opacity-40'
+                                  : off
+                                    ? 'bg-red/10 text-red'
+                                    : override
+                                      ? 'bg-amber-l text-amber'
+                                      : 'text-text2 hover:bg-teal-l/50'
+                              }`}
                             >
                               {off ? 'Off' : `${hrs}h`}
                             </div>
@@ -173,11 +199,12 @@ export function Schedule() {
                   <tr className="border-t-2 border-border bg-surface2 font-bold">
                     <td colSpan={2} className="px-3 py-1.5 text-[11px]">Week total</td>
                     {weeks.map((w) => {
+                      const cap = capacityFor(w.key);
                       const com = committedFor(w.key);
-                      const over = com > weekCapacity && weekCapacity > 0;
+                      const over = com > cap && cap > 0;
                       return (
                         <td key={w.key} colSpan={5} className="border-l-2 border-border px-2 py-1 text-center text-[10px]">
-                          <div className={over ? 'text-red' : weekCapacity > 0 ? 'text-teal' : 'text-text3'}>{weekCapacity}h avail</div>
+                          <div className={over ? 'text-red' : cap > 0 ? 'text-teal' : 'text-text3'}>{cap}h avail</div>
                           {com > 0 && <div className={over ? 'text-red' : 'text-text2'}>{com}h booked</div>}
                         </td>
                       );
@@ -186,12 +213,17 @@ export function Schedule() {
                 </tfoot>
               </table>
             </div>
-            <p className="mb-4 text-[10px] text-text3">Click any day cell to adjust an operative's standard hours.</p>
+            <p className="mb-4 text-[10px] text-text3">
+              Click a day cell to set that week's hours for the operative (holiday, overtime…).
+              <span className="ml-2">🟠 Amber = override applied</span>
+              <span className="ml-2">🔴 Red = day off</span>
+              <span className="ml-2">· The current week only counts today onwards.</span>
+            </p>
 
             {/* Weekly schedule cards */}
             <div className="mb-2 text-xs font-bold">Weekly Schedule</div>
             {weeks.map((w) => {
-              const cap = weekCapacity;
+              const cap = capacityFor(w.key);
               const com = committedFor(w.key);
               const pct = cap > 0 ? Math.min(Math.round((com / cap) * 100), 100) : 0;
               const over = com > cap && cap > 0;
@@ -202,7 +234,7 @@ export function Schedule() {
                 <div key={w.key} className="mb-2.5 rounded-lg border bg-surface p-3" style={{ borderColor: over ? 'var(--color-red)' : 'var(--color-border)' }}>
                   <div className="mb-2 flex items-center justify-between">
                     <div>
-                      <div className="text-[13px] font-bold">{w.label}</div>
+                      <div className="text-[13px] font-bold">{w.label}{w.key === curKey && <span className="ml-1.5 text-[10px] font-normal text-teal">(this week — remaining days)</span>}</div>
                       <div className="mt-0.5 text-[10px] text-text3">{cap > 0 ? `${cap}h available · ${com}h committed` : 'No capacity set'}</div>
                     </div>
                     <div className="text-right">
@@ -240,8 +272,8 @@ export function Schedule() {
       {editCell && (
         <DayCellEditor
           op={editCell.op}
+          weekKey={editCell.weekKey}
           di={editCell.di}
-          current={opDayHrs(editCell.op, editCell.di)}
           busy={updateOp.isPending}
           onSave={saveCell}
           onClose={() => setEditCell(null)}
@@ -271,26 +303,30 @@ function TicketMini({ t, onOpen }: { t: Ticket; onOpen: () => void }) {
   );
 }
 
+/** Per-week day-hours editor (ported from editOpDay: presets, reset-to-default). */
 function DayCellEditor({
   op,
+  weekKey,
   di,
-  current,
   busy,
   onSave,
   onClose,
 }: {
   op: Operative;
+  weekKey: string;
   di: number;
-  current: number;
   busy: boolean;
   onSave: (hrs: number) => void;
   onClose: () => void;
 }) {
+  const current = getOpDayHrs(op, weekKey, di);
+  const def = opDayDefault(op, di);
+  const hasOverride = (op.dayHrs ?? {})[`${weekKey}_d${di}`] !== undefined;
   const [val, setVal] = useState(String(current));
   return (
     <Modal
-      title={`${op.name} — ${DAYS[di]}`}
-      sub="Sets the standard hours for this weekday"
+      title={`${op.name} — ${DAYS[di]}, ${formatWc(new Date(weekKey))}`}
+      sub="Sets the hours for this day of this week only"
       onClose={onClose}
       footer={
         <>
@@ -320,19 +356,80 @@ function DayCellEditor({
           </button>
         ))}
       </div>
+      {hasOverride && (
+        <div className="mt-3 border-t border-border pt-3">
+          <Button className="w-full justify-center" disabled={busy} onClick={() => onSave(def)}>
+            ↩ Reset to default ({def}h)
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }
 
-// ─── History tab: the weekly utilisation summary ─────────────────────────────
-function History() {
+// ─── History tab: weekly utilisation summary + hours CSV export ──────────────
+function History({ ops }: { ops: Operative[] }) {
   const { data, isLoading, error } = useSchedule();
+  const [from, setFrom] = useState(() => isoDate(mondayOf(new Date())));
+  const [to, setTo] = useState(() => {
+    const d = mondayOf(new Date());
+    d.setDate(d.getDate() + (PLANNER_WEEKS - 1) * 7);
+    return isoDate(d);
+  });
+
+  /** Weeks (Monday keys) in the selected range, capped at 52. */
+  function rangeWeeks(): string[] {
+    const out: string[] = [];
+    const start = mondayOf(new Date(from));
+    const end = mondayOf(new Date(to));
+    for (let i = 0; i < 52; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i * 7);
+      if (d > end) break;
+      out.push(isoDate(d));
+    }
+    return out;
+  }
+
+  /** Export operative hours (ported from exportHoursCSV): one row per
+   * operative × week with any hours, Mon–Fri + total. */
+  function exportHours() {
+    const weeks = rangeWeeks();
+    const rows: string[][] = [['Operative', 'Skills', 'W/C', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Total Hours']];
+    for (const op of ops) {
+      const skills = op.skills.join(' | ') || 'None';
+      for (const wk of weeks) {
+        const hrs = [0, 1, 2, 3, 4].map((di) => getOpDayHrs(op, wk, di));
+        const total = hrs.reduce((a, b) => a + b, 0);
+        if (total > 0) rows.push([op.name, skills, wk, ...hrs.map(String), String(total)]);
+      }
+    }
+    const q = (v: string) => (/[",]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const csv = rows.map((r) => r.map(q).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bowson_hours_${from}_to_${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const dateCtl = 'rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal';
+
   return (
     <>
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-surface2 px-4 py-3">
+        <span className="text-xs font-bold">Show period:</span>
+        <label className="text-xs">From <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`ml-1 ${dateCtl}`} /></label>
+        <label className="text-xs">To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`ml-1 ${dateCtl}`} /></label>
+        <Button variant="primary" className="ml-auto" onClick={exportHours}>
+          ⭳ Export {rangeWeeks().length} week{rangeWeeks().length !== 1 ? 's' : ''} to CSV
+        </Button>
+      </div>
       <div className="mb-4 grid grid-cols-2 gap-2.5 md:grid-cols-3">
         <Metric label="Operatives" value={data ? data.operativeCount : '…'} />
-        <Metric label="Weekly capacity" value={data ? `${data.weeklyCapacity} h` : '…'} sub="5 days × hrs/op" />
-        <Metric label="Committed (next 8 wks)" value={data ? `${Math.round(data.weeks.reduce((s, w) => s + w.committedHrs, 0))} h` : '…'} />
+        <Metric label="Weekly capacity" value={data ? `${data.weeklyCapacity} h` : '…'} sub="standard week" />
+        <Metric label={`Committed (next ${PLANNER_WEEKS} wks)`} value={data ? `${Math.round(data.weeks.reduce((s, w) => s + w.committedHrs, 0))} h` : '…'} />
       </div>
       <Card title="By week">
         <Table head={['Week', 'Tickets', 'Committed', 'Capacity', 'Utilisation']}>

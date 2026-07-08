@@ -16,6 +16,8 @@ export interface Operative {
   skills: string[];
   defaultHrs: number | null;
   dayPattern: number[];
+  /** Per-week day-hour overrides keyed "<mondayIso>_d<dayIdx>" (0=Mon…6=Sun). */
+  dayHrs: Record<string, number> | null;
 }
 
 export interface Mould {
@@ -138,6 +140,16 @@ export interface Order {
   createdAt: string;
 }
 
+export interface DashboardBlocker {
+  id: number;
+  tn: number | null;
+  detail: string;
+  status: string;
+  orderId: number;
+  orderNumber: string | null;
+  siteName: string | null;
+}
+
 export interface DashboardData {
   orders: { active: number; pending: number; overdue: number };
   tickets: { slidesInProduction: number; partsInProduction: number; manHours: number };
@@ -159,6 +171,18 @@ export interface DashboardData {
     progress: number;
   }[];
   hoursByStage: { stage: string; hrs: number }[];
+  blockers: {
+    maintenance: (DashboardBlocker & { mouldRef: string; mouldNotes: string | null })[];
+    noMould: DashboardBlocker[];
+  };
+  overdueOrders: {
+    id: number;
+    orderNumber: string;
+    customer: string | null;
+    status: string;
+    deadline: string;
+    daysOver: number;
+  }[];
   stageCapacity: {
     thisWeek: { stage: string; trained: number; available: number }[];
     nextWeek: { stage: string; trained: number; available: number }[];

@@ -67,6 +67,56 @@ export function Dashboard() {
           />
         </div>
 
+        {/* ── Production blockers (ported from the prototype dashboard) ── */}
+        {(data?.blockers.maintenance.length ?? 0) > 0 && (
+          <BlockerPanel
+            tone="red"
+            title="⚠ Cannot Produce — Mould in Maintenance"
+            sub={`${data!.blockers.maintenance.length} ticket${data!.blockers.maintenance.length !== 1 ? 's' : ''} assigned to a mould that's currently out of action. Wait for repair, or reassign to another mould.`}
+            rows={data!.blockers.maintenance.map((b) => ({
+              ...b,
+              badge: b.mouldRef,
+              note: b.mouldNotes || 'In maintenance',
+            }))}
+            onOpenPlanner={() => navigate('/moulds')}
+            onOpenOrder={(oid) => navigate(`/orders/${oid}`)}
+          />
+        )}
+        {(data?.blockers.noMould.length ?? 0) > 0 && (
+          <BlockerPanel
+            tone="amber"
+            title="⚠ Cannot Produce — No Mould Assigned"
+            sub={`${data!.blockers.noMould.length} ticket${data!.blockers.noMould.length !== 1 ? 's' : ''} without a mould. Link the catalogue part to a mould (recommended), or assign one to this ticket directly.`}
+            rows={data!.blockers.noMould.map((b) => ({ ...b, badge: '— No mould —', note: 'Assign a mould' }))}
+            onOpenPlanner={() => navigate('/moulds')}
+            onOpenOrder={(oid) => navigate(`/orders/${oid}`)}
+          />
+        )}
+
+        {/* ── Overdue orders ── */}
+        {(data?.overdueOrders.length ?? 0) > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-[11px] font-bold text-red">⚠ Overdue Orders</div>
+            <Card>
+              <Table head={["Order", "Customer", "Status", "Deadline", "Over"]}>
+                {data!.overdueOrders.map((o) => (
+                  <tr
+                    key={o.id}
+                    className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
+                    onClick={() => navigate(`/orders/${o.id}`)}
+                  >
+                    <td className="px-3 py-2 font-bold text-teal">{o.orderNumber}</td>
+                    <td className="max-w-40 truncate px-3 py-2 text-text2">{o.customer ?? '—'}</td>
+                    <td className="px-3 py-2 text-[11px]">{o.status}</td>
+                    <td className="px-3 py-2 text-[11px] font-semibold text-red">{o.deadline}</td>
+                    <td className="px-3 py-2 text-[11px] font-semibold text-red">+{o.daysOver}d</td>
+                  </tr>
+                ))}
+              </Table>
+            </Card>
+          </div>
+        )}
+
         {/* ── Recent orders + hours by stage ── */}
         <div className="mb-4 grid gap-3 lg:grid-cols-[2fr_1fr]">
           <Card title="Recent Orders">
@@ -302,6 +352,75 @@ function StageCapBlock({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/** "Cannot Produce" alert panel (ported from the prototype's blockerRow). */
+function BlockerPanel({
+  tone,
+  title,
+  sub,
+  rows,
+  onOpenPlanner,
+  onOpenOrder,
+}: {
+  tone: 'red' | 'amber';
+  title: string;
+  sub: string;
+  rows: {
+    id: number;
+    tn: number | null;
+    detail: string;
+    status: string;
+    orderId: number;
+    orderNumber: string | null;
+    siteName: string | null;
+    badge: string;
+    note: string;
+  }[];
+  onOpenPlanner: () => void;
+  onOpenOrder: (orderId: number) => void;
+}) {
+  const colour = tone === 'red' ? 'var(--color-red)' : 'var(--color-amber)';
+  return (
+    <div className="mb-4">
+      <div
+        className="rounded-lg border px-4 py-3.5"
+        style={{ borderColor: colour, background: tone === 'red' ? 'rgba(239,68,68,.05)' : 'rgba(245,158,11,.05)' }}
+      >
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="text-xs font-extrabold uppercase tracking-wide" style={{ color: colour }}>{title}</div>
+          <button
+            onClick={onOpenPlanner}
+            className="rounded-md border border-border2 bg-surface px-2.5 py-1 text-[11px] font-medium hover:bg-surface2"
+          >
+            Open Mould Planner →
+          </button>
+        </div>
+        <div className="mb-2.5 text-[11px] text-text3">{sub}</div>
+        {rows.slice(0, 5).map((r) => (
+          <div
+            key={r.id}
+            onClick={() => onOpenOrder(r.orderId)}
+            className="flex cursor-pointer items-center justify-between border-b border-border py-1.5 text-xs last:border-0 hover:bg-teal-l/20"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-bold">#{r.tn ?? 'TBC'} {r.detail}</div>
+              <div className="mt-0.5 text-[10px] text-text3">
+                {r.orderNumber ?? '—'}{r.siteName ? ` · ${r.siteName}` : ''} · {r.status.replace(/^\d+\.\s*/, '')}
+              </div>
+            </div>
+            <div className="ml-2.5 shrink-0 text-right">
+              <div className="text-[11px] font-bold" style={{ color: colour }}>{r.badge}</div>
+              <div className="text-[9px] italic text-text3">{r.note}</div>
+            </div>
+          </div>
+        ))}
+        {rows.length > 5 && (
+          <div className="mt-1.5 text-center text-[10px] text-text3">…and {rows.length - 5} more — see Mould Planner</div>
+        )}
       </div>
     </div>
   );

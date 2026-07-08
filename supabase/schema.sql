@@ -46,6 +46,7 @@ create table "operatives" (
   "skills"     text[] not null default '{}',
   "defaultHrs" double precision,
   "dayPattern" double precision[] not null default '{}',
+  "dayHrs"     jsonb not null default '{}'::jsonb,
   "createdAt"  timestamptz not null default now(),
   "updatedAt"  timestamptz not null default now(),
   "deletedAt"  timestamptz

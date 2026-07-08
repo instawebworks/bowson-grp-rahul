@@ -23,22 +23,27 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     const nowIso = now.toISOString();
 
     const [ordersR, recentR, ticketsR, opsR, mouldsR] = await Promise.all([
-      db.from('orders').select('id, status, deadline').is('deletedAt', null),
+      db.from('orders').select('id, orderNumber, siteName, status, deadline, isDraft, customer:customers(name)').is('deletedAt', null),
       db.from('orders')
         .select('id, orderNumber, status, deadline, customer:customers(name), tickets:tickets(id,type,status,pct,netPrice,compParentId)')
         .is('deletedAt', null).is('tickets.deletedAt', null)
         .order('id', { ascending: false }).limit(8),
-      db.from('tickets').select('type, status, hrs, compParentId, wc').is('deletedAt', null),
+      db.from('tickets').select('id, tn, detail, type, status, hrs, compParentId, wc, mouldId, orderId').is('deletedAt', null),
       db.from('operatives').select('skills, defaultHrs').is('deletedAt', null),
-      db.from('moulds').select('id, status').is('deletedAt', null),
+      db.from('moulds').select('id, ref, status, notes').is('deletedAt', null),
     ]);
 
-    const orders = unwrap(ordersR) as { id: number; status: string; deadline: string | null }[];
+    const orders = unwrap(ordersR) as unknown as {
+      id: number; orderNumber: string; siteName: string | null; status: string;
+      deadline: string | null; isDraft: boolean; customer: { name: string } | null;
+    }[];
     const tickets = unwrap(ticketsR) as {
-      type: string; status: string; hrs: number; compParentId: number | null; wc: string | null;
+      id: number; tn: number | null; detail: string; type: string; status: string;
+      hrs: number; compParentId: number | null; wc: string | null; mouldId: number | null; orderId: number;
     }[];
     const operatives = unwrap(opsR) as { skills: string[]; defaultHrs: number | null }[];
-    const moulds = unwrap(mouldsR) as { id: number; status: string }[];
+    const moulds = unwrap(mouldsR) as { id: number; ref: string; status: string; notes: string | null }[];
+    const orderById = new Map(orders.map((o) => [o.id, o]));
 
     // ── Order metrics ──
     const TERMINAL = ['Despatched', 'Completed', 'Cancelled', 'Pending', 'Draft'];
@@ -106,6 +111,51 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       progress: orderProgress(o.tickets ?? []),
     }));
 
+    // ── Production blockers (ported from the prototype dashboard) ──
+    // A) stranded by a mould in maintenance; B) no mould assigned at all.
+    const liveOrder = (oid: number) => {
+      const o = orderById.get(oid);
+      return !!o && !['Pending', 'Draft', 'Cancelled'].includes(o.status) && !o.isDraft;
+    };
+    const blockerInfo = (t: (typeof tickets)[number]) => {
+      const o = orderById.get(t.orderId);
+      return {
+        id: t.id, tn: t.tn, detail: t.detail, status: t.status, orderId: t.orderId,
+        orderNumber: o?.orderNumber ?? null, siteName: o?.siteName ?? null,
+      };
+    };
+    const maintMoulds = moulds.filter((m) => m.status === 'Maintenance');
+    const blockedByMaintenance = tickets
+      .filter((t) =>
+        t.status === '3. Queue - Awaiting Mould' && t.mouldId != null &&
+        maintMoulds.some((m) => m.id === t.mouldId) && liveOrder(t.orderId),
+      )
+      .map((t) => {
+        const m = maintMoulds.find((x) => x.id === t.mouldId)!;
+        return { ...blockerInfo(t), mouldRef: m.ref, mouldNotes: m.notes };
+      });
+    const blockedByNoMould = tickets
+      .filter((t) =>
+        t.type !== 'RAW' && t.type !== 'COMP' && t.mouldId == null &&
+        ['1. Spec Required', '2. Materials Required', '3. Queue - Awaiting Mould'].includes(t.status) &&
+        liveOrder(t.orderId),
+      )
+      .map(blockerInfo);
+
+    // ── Overdue orders list ──
+    const dayMs = 86_400_000;
+    const overdueOrders = orders
+      .filter((o) => o.deadline && o.deadline < nowIso && !['Despatched', 'Completed', 'Cancelled'].includes(o.status) && !o.isDraft)
+      .sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''))
+      .map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        customer: o.customer?.name ?? o.siteName,
+        status: o.status,
+        deadline: o.deadline!.slice(0, 10),
+        daysOver: Math.max(1, Math.floor((now.getTime() - new Date(o.deadline!).getTime()) / dayMs)),
+      }));
+
     // ── Stage capacity (this week / next week) ──
     const weekday = now.getDay() >= 1 && now.getDay() <= 5;
     const stageRow = () =>
@@ -129,6 +179,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       },
       recentOrders,
       hoursByStage,
+      blockers: { maintenance: blockedByMaintenance, noMould: blockedByNoMould },
+      overdueOrders,
       stageCapacity,
       thisWeek: nextWeeks(1)[0],
       nextWeek: formatWc(new Date(wcKey(nextWeeks(2)[1]!))),

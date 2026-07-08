@@ -35,6 +35,8 @@ export const operativeInputSchema = z.object({
   skills: z.array(z.string()).default([]),
   defaultHrs: z.number().nonnegative().nullish(),
   dayPattern: z.array(z.number().nonnegative()).default([]),
+  /** Per-week day-hour overrides keyed "<mondayIso>_d<dayIdx>" (planner). */
+  dayHrs: z.record(z.number().nonnegative()).optional(),
 });
 export type OperativeInput = z.infer<typeof operativeInputSchema>;
 
