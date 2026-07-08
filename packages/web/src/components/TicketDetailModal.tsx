@@ -5,14 +5,17 @@ import {
   useAssignTicket,
   useAuditFor,
   useConfirmCure,
+  useDeleteTicket,
   useMoulds,
   useOperatives,
   useSetCure,
   useTicket,
   useToggleTimer,
 } from '../lib/hooks';
+import { useAuth } from '../lib/auth';
 import { Button, Modal, ProgressBar, StatusPill } from '../components/ui';
 import { TicketStatusSelect } from './TicketStatusSelect';
+import { EditTicketModal } from './EditTicketModal';
 import { cureState, fmtCureMins, fmtElapsed, initials, money } from '../lib/format';
 
 const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
@@ -31,6 +34,10 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const setCure = useSetCure(orderId);
   const confirmCure = useConfirmCure(orderId);
   const toggleTimer = useToggleTimer();
+  const deleteTicket = useDeleteTicket(orderId ?? 0);
+  const { canManage } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -57,13 +64,54 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const isRaw = t?.type === 'RAW';
   const isComp = t?.type === 'COMP';
 
+  if (editing && t) {
+    return <EditTicketModal ticket={t} parts={t.parts ?? []} onClose={() => setEditing(false)} />;
+  }
+
+  if (confirmDelete && t) {
+    return (
+      <Modal
+        title={isComp ? 'Remove this slide and all its parts?' : 'Remove this ticket?'}
+        onClose={() => setConfirmDelete(false)}
+        footer={
+          <>
+            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={deleteTicket.isPending}
+              onClick={() => deleteTicket.mutate(t.id, { onSuccess: onClose })}
+            >
+              Remove
+            </Button>
+          </>
+        }
+      >
+        <p className="text-xs text-text2"><strong>{t.detail}</strong> will be removed from this order.</p>
+        {isComp && (t.parts?.length ?? 0) > 0 && (
+          <p className="mt-1.5 text-[11px] text-text3">All {t.parts!.length} part tickets will also be removed.</p>
+        )}
+        {deleteTicket.isError && <div className="mt-2 text-[11px] text-red">Delete failed — {(deleteTicket.error as Error).message}</div>}
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       title={t ? `${t.type} · Ticket ${t.tn ?? ''} — ${t.detail}` : 'Ticket'}
       sub={t?.order ? `${t.order.orderNumber}${t.order.siteName ? ` · ${t.order.siteName}` : ''}` : undefined}
       onClose={onClose}
       width="max-w-3xl"
-      footer={<Button variant="primary" onClick={onClose}>Close</Button>}
+      footer={
+        <>
+          {t && canManage && (
+            <>
+              <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>
+              <Button onClick={() => setEditing(true)}>✎ Edit</Button>
+            </>
+          )}
+          <Button variant="primary" onClick={onClose}>Close</Button>
+        </>
+      }
     >
       {isLoading || !t ? (
         <div className="py-8 text-center text-xs text-text3">Loading…</div>

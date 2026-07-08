@@ -93,6 +93,7 @@ export const ticketInputSchema = z.object({
   unitPrice: z.number().nonnegative().default(0),
   mouldId: z.number().int().nullish(),
   resinType: resinTypeSchema.nullish(),
+  qcRef: z.string().nullish(),
 });
 export type TicketInput = z.infer<typeof ticketInputSchema>;
 export const ticketUpdateSchema = ticketInputSchema.partial().omit({ orderId: true });

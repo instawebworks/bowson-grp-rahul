@@ -1,36 +1,43 @@
 import { useState } from 'react';
 import { GRP_STAGES, RAW_STAGES, type FamilyNotReady } from '@bowson/shared';
-import { useChangeTicketStatus } from '../lib/hooks';
+import { useChangeTicketStatus, useUpdateTicket } from '../lib/hooks';
 import { ApiError } from '../lib/api';
 import { Button, Modal } from './ui';
 import { ManagerPinGate } from './ManagerPinGate';
 import { PackingChecklistModal } from './PackingChecklistModal';
 
 type Gate =
+  | { kind: 'qcref'; status: string }
   | { kind: 'packing'; status: string }
   | { kind: 'family'; status: string; notReady: FamilyNotReady[] }
   | { kind: 'family-pin'; status: string };
 
-/** The ticket fields the gated select needs. */
+/** The ticket fields the gated status change needs. */
 export interface StatusTicket {
   id: number;
   tn: number | null;
   type: string;
   status: string;
   orderId: number;
+  qcRef?: string | null;
 }
 
 /**
- * Stage dropdown with the prototype's workflow gates:
- * - advancing a MADE / COMP into "9. Packing" first verifies the hardware
- *   checklist (saved to the order) — ported from showPackingChecklist;
- * - jumping a COMP / PART to Despatched is blocked by the API family gate
- *   (ported from doAdvance) with a manager-PIN override.
+ * Workflow-gated status change, shared by the stage dropdowns and the
+ * In Production advance buttons. Ported prototype gates:
+ * - moving to "9. Packing" without a QC reference asks for one first
+ *   (setTicketStatus / advanceTkt QC gate) and saves it to the ticket;
+ * - a MADE / COMP entering Packing then verifies the hardware checklist
+ *   (showPackingChecklist), saved to the order;
+ * - a COMP / PART jumping to Despatched is blocked by the API family gate
+ *   (doAdvance) with a manager-PIN override.
  */
-export function TicketStatusSelect({ ticket, className }: { ticket: StatusTicket; className?: string }) {
+export function useGatedStatusChange(ticket: StatusTicket) {
   const change = useChangeTicketStatus(ticket.orderId);
+  const patch = useUpdateTicket(ticket.orderId);
   const [gate, setGate] = useState<Gate | null>(null);
-  const stages = ticket.type === 'RAW' ? RAW_STAGES : GRP_STAGES;
+  const [qcRefInput, setQcRefInput] = useState('');
+  const [qcRefErr, setQcRefErr] = useState(false);
 
   function apply(status: string, managerOverride = false) {
     setGate(null);
@@ -47,18 +54,71 @@ export function TicketStatusSelect({ ticket, className }: { ticket: StatusTicket
     );
   }
 
+  /** After the QC-ref gate: packing checklist for MADE/COMP, else apply. */
+  function afterQcRef(status: string) {
+    if (ticket.type === 'MADE' || ticket.type === 'COMP') {
+      setGate({ kind: 'packing', status });
+    } else {
+      apply(status);
+    }
+  }
+
   function requestChange(status: string) {
     if (!status || status === ticket.status) return;
-    // Packing gate — verify hardware before a MADE / COMP enters Packing.
-    if (status === '9. Packing' && (ticket.type === 'MADE' || ticket.type === 'COMP')) {
-      setGate({ kind: 'packing', status });
+    if (status === '9. Packing' && ticket.type !== 'RAW') {
+      if (!ticket.qcRef) {
+        setQcRefInput('');
+        setQcRefErr(false);
+        setGate({ kind: 'qcref', status });
+        return;
+      }
+      afterQcRef(status);
       return;
     }
     apply(status);
   }
 
-  return (
+  function confirmQcRef(status: string) {
+    const ref = qcRefInput.trim();
+    if (!ref) {
+      setQcRefErr(true);
+      return;
+    }
+    patch.mutate(
+      { ticketId: ticket.id, input: { qcRef: ref } },
+      { onSuccess: () => afterQcRef(status) },
+    );
+  }
+
+  const gateUi = (
     <>
+      {gate?.kind === 'qcref' && (
+        <Modal
+          title="QC Reference Required"
+          onClose={() => setGate(null)}
+          footer={
+            <>
+              <Button onClick={() => setGate(null)}>Cancel</Button>
+              <Button variant="primary" disabled={patch.isPending} onClick={() => confirmQcRef(gate.status)}>
+                Confirm &amp; Advance to Packing
+              </Button>
+            </>
+          }
+        >
+          <p className="mb-3 text-xs text-text2">Enter the QC reference before moving this ticket to Packing.</p>
+          <label className="mb-1 block text-[11px] font-semibold text-text2">QC Ref</label>
+          <input
+            value={qcRefInput}
+            autoFocus
+            placeholder="e.g. QC-2025-047"
+            onChange={(e) => { setQcRefInput(e.target.value); setQcRefErr(false); }}
+            onKeyDown={(e) => e.key === 'Enter' && confirmQcRef(gate.status)}
+            className={`w-full rounded-md border bg-surface px-2.5 py-2 text-xs outline-none focus:border-teal ${qcRefErr ? 'border-red' : 'border-border2'}`}
+          />
+          {qcRefErr && <div className="mt-1 text-[11px] text-red">A QC reference is required</div>}
+        </Modal>
+      )}
+
       {gate?.kind === 'packing' && (
         <PackingChecklistModal
           orderId={ticket.orderId}
@@ -103,10 +163,23 @@ export function TicketStatusSelect({ ticket, className }: { ticket: StatusTicket
           onCancel={() => setGate(null)}
         />
       )}
+    </>
+  );
 
+  return { requestChange, gateUi, isPending: change.isPending || patch.isPending };
+}
+
+/** Stage dropdown built on the gated status change. */
+export function TicketStatusSelect({ ticket, className }: { ticket: StatusTicket; className?: string }) {
+  const { requestChange, gateUi, isPending } = useGatedStatusChange(ticket);
+  const stages = ticket.type === 'RAW' ? RAW_STAGES : GRP_STAGES;
+
+  return (
+    <>
+      {gateUi}
       <select
         value={(stages as readonly string[]).includes(ticket.status) ? ticket.status : ''}
-        disabled={change.isPending}
+        disabled={isPending}
         onChange={(e) => requestChange(e.target.value)}
         className={className ?? 'rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal'}
       >

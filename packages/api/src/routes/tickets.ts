@@ -436,16 +436,52 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
   });
 
+  // Manager return-to-production override on a despatched ticket — ported from
+  // managerReturnToProduction: back to QC Check, despatch stamps cleared, the
+  // order reopens (via recompute). PIN-gated in the UI.
+  app.post('/:id/return-to-production', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const t = unwrap(
+      await db.from('tickets').select('status, orderId, compParentId')
+        .eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as ({ status: string } & TicketRef) | null;
+    if (!t) return reply.notFound('Ticket not found');
+    if (t.status !== 'Despatched') {
+      return reply.badRequest(`Only despatched tickets can be returned to production (ticket is ${t.status})`);
+    }
+    unwrap(
+      await db.from('tickets').update({
+        status: '8. QC Check', pct: AUTO_PCT['8. QC Check'] ?? 85,
+        despatchDate: null, completed: null, partialDespatch: false, managerOverride: false,
+      }).eq('id', id).select('id'),
+    );
+    unwrap(
+      await db.from('audit_log').insert({
+        entityType: 'ticket', entityId: id, field: 'status',
+        fromValue: 'Despatched', toValue: '8. QC Check',
+        note: 'Manager override — returned to production',
+      }).select('id'),
+    );
+    await recomputeForTicket(t);
+    return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+  });
+
   app.delete('/:id', async (req, reply) => {
     const id = parseId((req.params as { id: string }).id, reply);
     if (id === PARSE_FAILED) return;
     const existing = unwrap(
-      await db.from('tickets').select('orderId, compParentId').eq('id', id).is('deletedAt', null).maybeSingle(),
-    ) as TicketRef | null;
+      await db.from('tickets').select('type, orderId, compParentId').eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as ({ type: string } & TicketRef) | null;
     if (!existing) return reply.notFound('Ticket not found');
-    unwrap(
-      await db.from('tickets').update({ deletedAt: new Date().toISOString() }).eq('id', id).select('id'),
-    );
+    const deletedAt = new Date().toISOString();
+    unwrap(await db.from('tickets').update({ deletedAt }).eq('id', id).select('id'));
+    // Deleting a COMP takes its PART children with it (no orphaned parts).
+    if (existing.type === 'COMP') {
+      unwrap(
+        await db.from('tickets').update({ deletedAt }).eq('compParentId', id).is('deletedAt', null).select('id'),
+      );
+    }
     await recomputeForTicket(existing);
     return reply.status(204).send();
   });

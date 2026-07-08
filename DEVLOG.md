@@ -1260,3 +1260,87 @@ parity phases.
   actions + columns + export, per-column filters, manager
   return-to-production, PIN-gated delete order/ticket UI, edit ticket fields
   (gaps #6 #7 #8 #11 #12 #13). Then P4 → P5.
+
+---
+
+## 2026-07-08 — Phase 3: bulk ops, table actions, filters, deletes, QC-ref gate
+
+Gaps #6 #7 #8 #11 #12 #13 plus the Phase-2-deferred QC-Ref gate, and one of
+the long-flagged bugs (COMP delete orphaning parts).
+
+**Done**
+- **Schema:** tickets gain `qcRef` (migration applied live via /pg/query;
+  schema.sql updated; `ticketInputSchema` accepts it so PATCH persists it).
+- **API:**
+  - `POST /api/tickets/:id/return-to-production` (ported from
+    managerReturnToProduction): despatched ticket → 8. QC Check, despatch
+    stamps + partial flag cleared, audited, order reopens via recompute.
+    400 if the ticket isn't Despatched.
+  - **Bug fix:** deleting a COMP now soft-deletes its PART children (the
+    "COMP delete orphans PARTs" bug from 2026-06-30 is closed).
+- **Gate chain refactor:** `useGatedStatusChange` hook (in
+  TicketStatusSelect.tsx) now runs QC-ref → packing checklist → family gate
+  in sequence for any status change; the dropdowns and the new In Production
+  advance buttons share it. Moving to "9. Packing" without a `qcRef` asks for
+  one (saved to the ticket), then MADE/COMP verify the packing checklist.
+- **All Tickets rebuilt** (ported from renderTickets):
+  - Selection checkboxes + select-all; **bulk advance bar** (count, target
+    stage, "▶ Advance selected") with the prototype's eligibility rules
+    (no RAW, no Pending orders, COMP→Despatched family check, PARTs stop at
+    QC) and a bulk **QC-ref modal** when moving into Packing.
+  - **▶ Bulk Update Status** modal — move ALL tickets at stage A to stage B
+    (In Progress orders only) with a live affected-count preview.
+  - **⚖ Assign Operative** panel — operative chips, "Select all visible",
+    appends the operative to each ticked ticket.
+  - **Per-column filters** (type / order / customer / ref / detail / stage /
+    deadline) via a new reusable `useColumnFilters` + `FilterInput`
+    (ColumnFilters.tsx); ✕ Clear filters; "— filtered" in the subtitle.
+  - Row extras: COMP "★ x/y parts at QC+", PART "↳ part of #tn", deadline
+    countdown / "✓ despatched" cell, Actions column — **⚠ Override**
+    (PIN → confirm → return to production) on despatched rows and **Mark
+    received** on RAW Ordered rows. Pagination (15/page).
+- **In Production rebuilt** as its own page (ported from renderInProd):
+  live MADE/PART + top-level COMPs on in-production orders sorted by
+  deadline; per-column filters; Qty / Theme-Spec / Days-Left columns;
+  **◀ step-back / ▶ advance** per row (advance runs the full gate chain;
+  COMPs show "Parts pending" until all parts pass QC); parent/parts notes;
+  **Export CSV**.
+- **Orders:** per-column filters (order # / customer / ref / deadline) with
+  ✕ Clear in the header row.
+- **Delete + edit UI:**
+  - Order detail: **Delete** (manager PIN → red "permanently delete" confirm
+    listing the order + ticket count → back to All Orders).
+  - Ticket detail modal: **Delete** (confirm; COMP warns parts go too) and
+    **✎ Edit**; order-detail ticket rows also get ✎.
+  - `EditTicketModal` (ported from editTicketDetailSpec + hrs/price):
+    detail, colour/spec, labour hrs, unit price, and "apply spec to all N
+    parts" propagation for assemblies.
+- `Table` accepts ReactNode heads (for filter inputs); `Card` className.
+
+**Verified**
+- All packages typecheck.
+- **API (live DB):** return-to-production (stamps cleared, order reopened,
+  audit note, 400 guard), qcRef persistence, COMP delete cascades to parts.
+- **UI (Playwright), 7 flows:** column filter narrows correctly (despatched
+  hidden by default); bulk advance of 2 tickets; In Production ▶ from QC →
+  QC-ref modal → packing checklist → Packing with qcRef saved; ◀ reverse;
+  ⚠ Override → PIN → returned to QC; ✎ edit saves detail+spec; PIN-gated
+  order delete. Zero console/page errors.
+
+**Notes**
+- The In Production ◀/▶ buttons act on the row's last-fetched stage; after a
+  change the row refreshes via query invalidation (~1s). The UI test waits
+  for the refresh — real users see the row update before clicking again.
+- Not ported (deliberately): per-order expandable ticket groups inside All
+  Orders rows (toggleOrderTickets) — our All Orders links to the order detail
+  which has the same per-ticket controls; revisit if missed.
+- Return-to-production on a **Completed** order reopens it to In Progress
+  (recompute); the prototype only reopened Despatched orders and left
+  Completed untouched. Ours is arguably more correct.
+
+**Next up**
+- **Phase 4:** Dashboard "Cannot Produce" blocker alerts + Overdue Orders
+  table; Schedule per-week day-hour overrides (needs week-overrides table),
+  16-week planner, Export Hours CSV, current-week proration (gaps #9 #10).
+- Then **Phase 5:** board extras, order-detail extras, SKU generator,
+  unlinked-catalogue linking (#14–#17).

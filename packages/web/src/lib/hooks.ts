@@ -188,6 +188,10 @@ export interface TicketEditInput {
   detail?: string;
   spec?: string | null;
   hrs?: number;
+  qty?: number;
+  unitPrice?: number;
+  drawing?: string | null;
+  qcRef?: string | null;
 }
 
 /** Inline edit of a ticket's detail / spec / hrs (used by the Step 2 ticket cards). */
@@ -362,6 +366,15 @@ export function useDespatchTickets() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: DespatchInput) => apiClient.post<DespatchResult>('/api/tickets/despatch', input),
+    onSuccess: () => invalidateTicketViews(qc),
+  });
+}
+
+/** Manager-PIN return of a despatched ticket to production (→ 8. QC Check). */
+export function useReturnToProduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: number) => apiClient.post<Ticket>(`/api/tickets/${ticketId}/return-to-production`, {}),
     onSuccess: () => invalidateTicketViews(qc),
   });
 }

@@ -84,15 +84,15 @@ export function Card({ title, actions, children, className }: { title?: string; 
   );
 }
 
-export function Table({ head, children }: { head: string[]; children: ReactNode }) {
+export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            {head.map((h) => (
+            {head.map((h, i) => (
               <th
-                key={h}
+                key={typeof h === 'string' ? h || `col-${i}` : `col-${i}`}
                 className="whitespace-nowrap border-b border-border bg-surface2 px-3 py-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-text3"
               >
                 {h}

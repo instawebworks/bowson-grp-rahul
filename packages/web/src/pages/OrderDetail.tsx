@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { nextStage } from '@bowson/shared';
 import {
   useAssignMould,
   useConfirmCure,
+  useDeleteOrder,
   useMoulds,
   useOrder,
   useOrderAudit,
   useSetCure,
 } from '../lib/hooks';
-import { Button, Card, Content, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
+import { Button, Card, Content, Modal, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
 import { TicketStatusSelect } from '../components/TicketStatusSelect';
+import { EditTicketModal } from '../components/EditTicketModal';
+import { ManagerPinGate } from '../components/ManagerPinGate';
 import { EditOrderForm } from '../components/EditOrderForm';
 import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
@@ -124,12 +127,14 @@ function TicketRow({
   moulds,
   now,
   indent,
+  onEdit,
 }: {
   ticket: Ticket;
   orderId: number;
   moulds: { id: number; ref: string }[];
   now: number;
   indent?: boolean;
+  onEdit?: () => void;
 }) {
   return (
     <tr className="border-b border-border last:border-0">
@@ -143,6 +148,9 @@ function TicketRow({
       <td className="px-3 py-2"><ProgressBar pct={ticket.pct} /></td>
       <td className="px-3 py-2"><MouldCureCell ticket={ticket} orderId={orderId} moulds={moulds} now={now} /></td>
       <td className="px-3 py-2 tabular-nums">{money(ticket.netPrice)}</td>
+      <td className="px-3 py-2">
+        {onEdit && <Button title="Edit" onClick={onEdit}>✎</Button>}
+      </td>
     </tr>
   );
 }
@@ -152,8 +160,12 @@ export function OrderDetail() {
   const orderId = Number(id);
   const { data: order, isLoading, error } = useOrder(orderId);
   const { data: moulds } = useMoulds();
+  const deleteOrder = useDeleteOrder();
+  const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [deleteFlow, setDeleteFlow] = useState<'pin' | 'confirm' | null>(null);
+  const [editTicket, setEditTicket] = useState<{ ticket: Ticket; parts: Ticket[] } | null>(null);
   const { canManage } = useAuth();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -189,12 +201,51 @@ export function OrderDetail() {
         />
       )}
       {showEdit && <EditOrderForm order={order} onClose={() => setShowEdit(false)} />}
+      {editTicket && (
+        <EditTicketModal ticket={editTicket.ticket} parts={editTicket.parts} onClose={() => setEditTicket(null)} />
+      )}
+      {deleteFlow === 'pin' && (
+        <ManagerPinGate
+          action={`delete order ${order.orderNumber}`}
+          onSuccess={() => setDeleteFlow('confirm')}
+          onCancel={() => setDeleteFlow(null)}
+        />
+      )}
+      {deleteFlow === 'confirm' && (
+        <Modal
+          title={`Delete Order ${order.orderNumber}?`}
+          onClose={() => setDeleteFlow(null)}
+          footer={
+            <>
+              <Button onClick={() => setDeleteFlow(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                disabled={deleteOrder.isPending}
+                onClick={() => deleteOrder.mutate(orderId, { onSuccess: () => navigate('/orders') })}
+              >
+                Yes — delete permanently
+              </Button>
+            </>
+          }
+        >
+          <p className="mb-2 text-[13px] text-text2">This will permanently delete:</p>
+          <ul className="mb-3 ml-4 list-disc text-xs leading-7 text-text2">
+            <li>Order <strong>{order.orderNumber}</strong> — {order.siteName ?? '—'}</li>
+            <li><strong>{tickets.length}</strong> associated ticket{tickets.length !== 1 ? 's' : ''}</li>
+          </ul>
+          <div className="rounded-lg border border-red bg-red/10 px-3 py-2 text-[11px] font-semibold text-red">
+            ⚠ This cannot be undone.
+          </div>
+          {deleteOrder.isError && <div className="mt-2 text-[11px] text-red">Delete failed — {(deleteOrder.error as Error).message}</div>}
+        </Modal>
+      )}
       <PageHeader
         title={`Order ${order.orderNumber}`}
         sub={order.customer?.name ?? undefined}
         actions={
           <>
             <Link to="/orders"><Button>← All Orders</Button></Link>
+            {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
             {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
             {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
           </>
@@ -213,10 +264,10 @@ export function OrderDetail() {
           title={`Tickets (${tickets.length})`}
           actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
         >
-          <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value']}>
+          <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
             {tops.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-10 text-center text-xs text-text3">
+                <td colSpan={8} className="px-3 py-10 text-center text-xs text-text3">
                   No tickets yet — click “+ Add ticket” to add items (Step 2).
                 </td>
               </tr>
@@ -229,6 +280,7 @@ export function OrderDetail() {
                 moulds={moulds ?? []}
                 now={now}
                 parts={t.type === 'COMP' ? partsOf(t.id) : []}
+                onEdit={canManage ? (ticket, parts) => setEditTicket({ ticket, parts }) : undefined}
               />
             ))}
           </Table>
@@ -253,18 +305,34 @@ function FragmentRow({
   moulds,
   now,
   parts,
+  onEdit,
 }: {
   ticket: Ticket;
   orderId: number;
   moulds: { id: number; ref: string }[];
   now: number;
   parts: Ticket[];
+  onEdit?: (ticket: Ticket, parts: Ticket[]) => void;
 }) {
   return (
     <>
-      <TicketRow ticket={ticket} orderId={orderId} moulds={moulds} now={now} />
+      <TicketRow
+        ticket={ticket}
+        orderId={orderId}
+        moulds={moulds}
+        now={now}
+        onEdit={onEdit ? () => onEdit(ticket, parts) : undefined}
+      />
       {parts.map((p) => (
-        <TicketRow key={p.id} ticket={p} orderId={orderId} moulds={moulds} now={now} indent />
+        <TicketRow
+          key={p.id}
+          ticket={p}
+          orderId={orderId}
+          moulds={moulds}
+          now={now}
+          indent
+          onEdit={onEdit ? () => onEdit(p, []) : undefined}
+        />
       ))}
     </>
   );

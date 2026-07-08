@@ -100,6 +100,7 @@ export interface Ticket {
   resinType: string | null;
   deadline?: string | null;
   completed: string | null;
+  qcRef: string | null;
   despatchDate: string | null;
   partialDespatch: boolean;
   managerOverride: boolean;

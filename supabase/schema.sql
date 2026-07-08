@@ -112,6 +112,7 @@ create table "tickets" (
   "cureCleared"     boolean not null default false,
   "dead"            timestamptz,
   "completed"       timestamptz,
+  "qcRef"           text,
   "despatchDate"    date,
   "partialDespatch" boolean not null default false,
   "managerOverride" boolean not null default false,

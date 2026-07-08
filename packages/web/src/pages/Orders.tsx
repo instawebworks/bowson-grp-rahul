@@ -4,6 +4,7 @@ import { ORDER_STATS } from '@bowson/shared';
 import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
 import { Button, Card, Content, PageHeader, StatusPill, Table } from '../components/ui';
+import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import type { Order } from '../lib/types';
@@ -96,6 +97,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
   const [statusFilter, setStatusFilter] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
   const [page, setPage] = useState(1);
+  const cf = useColumnFilters();
 
   const rows = useMemo(() => {
     let list = (data ?? []).filter((o) => !statuses || statuses.includes(o.status));
@@ -107,8 +109,16 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
         [o.orderNumber, o.siteName, o.customer?.name].filter(Boolean).join(' ').toLowerCase().includes(term),
       );
     }
+    list = list.filter(
+      (o) =>
+        cf.match('order', o.orderNumber) &&
+        cf.match('customer', o.customer?.name) &&
+        cf.match('ref', o.siteName) &&
+        cf.match('deadline', o.deadline?.slice(0, 10)),
+    );
     return list.sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''));
-  }, [data, statuses, showCompleted, statusFilter, q]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cf.match is derived from cf.filters
+  }, [data, statuses, showCompleted, statusFilter, q, cf.filters]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
   const current = Math.min(page, pageCount);
@@ -153,7 +163,19 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
         </div>
 
         <Card>
-          <Table head={['Order #', 'Customer', 'Customer Ref', 'Items', 'Status', 'Progress', 'Deadline / Despatched', 'Value', '']}>
+          <Table
+            head={[
+              <FilterInput key="order" col="order" placeholder="Order #" filters={cf.filters} onChange={(c, v) => { cf.set(c, v); setPage(1); }} />,
+              <FilterInput key="customer" col="customer" placeholder="Customer" filters={cf.filters} onChange={(c, v) => { cf.set(c, v); setPage(1); }} />,
+              <FilterInput key="ref" col="ref" placeholder="Customer Ref" filters={cf.filters} onChange={(c, v) => { cf.set(c, v); setPage(1); }} />,
+              'Items',
+              'Status',
+              'Progress',
+              <FilterInput key="deadline" col="deadline" placeholder="Deadline / Despatched" filters={cf.filters} onChange={(c, v) => { cf.set(c, v); setPage(1); }} />,
+              'Value',
+              cf.hasFilters ? <Button key="clear" onClick={cf.clear}>✕ Clear</Button> : '',
+            ]}
+          >
             {isLoading && <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">Loading…</td></tr>}
             {error && <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">Could not load — {(error as Error).message}</td></tr>}
             {!isLoading && !error && slice.length === 0 && (

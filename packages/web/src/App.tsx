@@ -1,5 +1,4 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { LIVE_STATUSES } from '@bowson/shared';
 import { AuthProvider, useAuth } from './lib/auth';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -17,6 +16,7 @@ import { Search } from './pages/Search';
 import { Schedule } from './pages/Schedule';
 import { Ready } from './pages/Ready';
 import { Despatched } from './pages/Despatched';
+import { InProduction } from './pages/InProduction';
 
 export default function App() {
   return (
@@ -48,7 +48,7 @@ function Gate() {
           <Route path="orders" element={<Orders />} />
           <Route path="orders/:id" element={<OrderDetail />} />
           <Route path="tickets" element={<Tickets />} />
-          <Route path="in-production" element={<Tickets title="In Production" statuses={[...LIVE_STATUSES]} />} />
+          <Route path="in-production" element={<InProduction />} />
           <Route path="ready" element={<Ready />} />
           <Route path="despatched" element={<Despatched />} />
           <Route path="schedule" element={<Schedule />} />
