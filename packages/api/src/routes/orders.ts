@@ -105,6 +105,25 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     return unwrap(await db.from('orders').select(SELECT).eq('id', id).is('tickets.deletedAt', null).maybeSingle());
   });
 
+  // Mark a despatched order Completed (invoice printed) — ported from
+  // printInvoiceAndComplete. Completed is terminal; recompute never reverts it.
+  app.post('/:id/complete', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const existing = unwrap(
+      await db.from('orders').select('status').eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as { status: string } | null;
+    if (!existing) return reply.notFound('Order not found');
+    unwrap(await db.from('orders').update({ status: 'Completed' }).eq('id', id).select('id'));
+    unwrap(
+      await db.from('audit_log').insert({
+        entityType: 'order', entityId: id, field: 'status',
+        fromValue: existing.status, toValue: 'Completed', note: 'Invoice printed',
+      }).select('id'),
+    );
+    return unwrap(await db.from('orders').select(SELECT).eq('id', id).is('tickets.deletedAt', null).maybeSingle());
+  });
+
   // Add a ticket to an order — from a catalogue template or a manual entry.
   app.post('/:id/tickets', async (req, reply) => {
     const id = parseId((req.params as { id: string }).id, reply);

@@ -326,6 +326,49 @@ export function useToggleTimer() {
   });
 }
 
+// ─── Despatch pipeline ───────────────────────────────────────────────────────
+export interface DespatchInput {
+  ticketIds: number[];
+  managerOverride?: boolean;
+  confirmPartial?: boolean;
+}
+export interface DespatchResult {
+  tickets: Ticket[];
+  partial: boolean;
+  despatchDate: string;
+}
+
+/** Bulk despatch of selected Ready-to-Despatch tickets. */
+export function useDespatchTickets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DespatchInput) => apiClient.post<DespatchResult>('/api/tickets/despatch', input),
+    onSuccess: () => invalidateTicketViews(qc),
+  });
+}
+
+/** Manager-PIN despatch override for a single blocked COMP / PART ticket. */
+export function useOverrideDespatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: number) => apiClient.post<Ticket>(`/api/tickets/${ticketId}/despatch-override`, {}),
+    onSuccess: () => invalidateTicketViews(qc),
+  });
+}
+
+/** Mark a despatched order Completed (invoice printed). */
+export function useCompleteOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: number) => apiClient.post<Order>(`/api/orders/${orderId}/complete`, {}),
+    onSuccess: (_data, orderId) => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
 export function useCustomers() {
   return useQuery({ queryKey: ['customers'], queryFn: () => apiClient.get<Customer[]>('/api/customers') });
 }

@@ -15,6 +15,8 @@ import { Moulds } from './pages/Moulds';
 import { Catalogue } from './pages/Catalogue';
 import { Search } from './pages/Search';
 import { Schedule } from './pages/Schedule';
+import { Ready } from './pages/Ready';
+import { Despatched } from './pages/Despatched';
 
 export default function App() {
   return (
@@ -47,8 +49,8 @@ function Gate() {
           <Route path="orders/:id" element={<OrderDetail />} />
           <Route path="tickets" element={<Tickets />} />
           <Route path="in-production" element={<Tickets title="In Production" statuses={[...LIVE_STATUSES]} />} />
-          <Route path="ready" element={<Tickets title="Ready to Despatch" statuses={['10. Ready to Despatch']} />} />
-          <Route path="despatched" element={<Orders title="Despatched" statuses={['Despatched', 'Completed']} />} />
+          <Route path="ready" element={<Ready />} />
+          <Route path="despatched" element={<Despatched />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="moulds" element={<Moulds />} />
           <Route path="catalogue" element={<Catalogue />} />

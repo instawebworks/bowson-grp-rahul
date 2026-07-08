@@ -125,3 +125,13 @@ export const statusChangeSchema = z.object({
 export const assignOperativesSchema = z.object({
   operativeIds: z.array(z.number().int()),
 });
+
+/** Bulk despatch from the Ready to Despatch screen. */
+export const despatchTicketsSchema = z.object({
+  ticketIds: z.array(z.number().int()).min(1),
+  /** Manager-PIN-authorised override of the COMP family-ready gate. */
+  managerOverride: z.boolean().default(false),
+  /** User confirmed the partial-despatch warning. */
+  confirmPartial: z.boolean().default(false),
+});
+export type DespatchInput = z.infer<typeof despatchTicketsSchema>;

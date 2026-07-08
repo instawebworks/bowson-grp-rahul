@@ -89,6 +89,52 @@ export function orderProgress(tickets: TicketLike[]): number {
   return Math.round(pcts.reduce((a, v) => a + v, 0) / pcts.length);
 }
 
+/** A member of a COMP family that is not yet at Ready to Despatch. */
+export interface FamilyNotReady {
+  tn: number | null;
+  detail: string;
+  type: 'Assembly' | 'Part' | 'Warning';
+  status: string;
+}
+
+export interface FamilyReadyResult {
+  ready: boolean;
+  notReady: FamilyNotReady[];
+  compId: number | null;
+}
+
+/**
+ * Check whether all members of a COMP family (the assembly + every part) are at
+ * "10. Ready to Despatch" (ported from familyReadyCheck). MADE tickets have no
+ * family and are always ready.
+ */
+export function familyReadyCheck(
+  ticket: TicketLike & { tn?: number | null; detail?: string },
+  tickets: (TicketLike & { tn?: number | null; detail?: string })[],
+): FamilyReadyResult {
+  const compId = ticket.type === 'COMP' ? ticket.id : ticket.compParentId;
+  if (compId == null) return { ready: true, notReady: [], compId: null };
+  const comp = tickets.find((t) => t.id === compId);
+  if (!comp) return { ready: true, notReady: [], compId };
+
+  const parts = tickets.filter((t) => t.compParentId === compId);
+  const rtd = '10. Ready to Despatch';
+  const notReady: FamilyNotReady[] = [];
+  if (comp.status !== rtd) {
+    notReady.push({ tn: comp.tn ?? null, detail: comp.detail ?? '', type: 'Assembly', status: comp.status });
+  }
+  for (const p of parts) {
+    if (p.status !== rtd) {
+      notReady.push({ tn: p.tn ?? null, detail: p.detail ?? '', type: 'Part', status: p.status });
+    }
+  }
+  // No parts found at all is itself suspicious — block unless a manager overrides.
+  if (!parts.length && comp.status === rtd) {
+    notReady.push({ tn: null, detail: 'No part tickets found for this assembly', type: 'Warning', status: 'Unknown' });
+  }
+  return { ready: notReady.length === 0, notReady, compId };
+}
+
 const READY_OR_DONE = ['10. Ready to Despatch', 'Despatched'];
 
 /**
@@ -104,7 +150,9 @@ export function deriveOrderStatus(current: string, tickets: TicketLike[]): strin
   const eff = (t: TicketLike) => resolveStatus(t, tickets);
 
   const allDespatched = nonRaw.every((t) => eff(t) === 'Despatched');
-  if (allDespatched) return 'Despatched';
+  // Completed is a terminal, manually set state (invoice printed) — never
+  // downgrade it back to Despatched on a recompute.
+  if (allDespatched) return current === 'Completed' ? 'Completed' : 'Despatched';
 
   const allReady = nonRaw.every((t) => READY_OR_DONE.includes(eff(t)));
   if (allReady) return 'Ready to Despatch';

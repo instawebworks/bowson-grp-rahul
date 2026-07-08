@@ -70,9 +70,9 @@ export function Metric({
   );
 }
 
-export function Card({ title, actions, children }: { title?: string; actions?: ReactNode; children: ReactNode }) {
+export function Card({ title, actions, children, className }: { title?: string; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+    <div className={`overflow-hidden rounded-xl border border-border bg-surface ${className ?? ''}`}>
       {(title || actions) && (
         <div className="flex items-center justify-between border-b border-border bg-surface2 px-3.5 py-2.5">
           <div className="text-xs font-semibold">{title}</div>

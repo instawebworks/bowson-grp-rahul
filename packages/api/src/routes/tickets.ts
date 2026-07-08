@@ -2,6 +2,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   AUTO_PCT,
   assignOperativesSchema,
+  despatchTicketsSchema,
+  familyReadyCheck,
   pctForStatus,
   statusChangeSchema,
   ticketInputSchema,
@@ -11,7 +13,7 @@ import {
 import { z } from 'zod';
 import { db, unwrap } from '../supabase.js';
 import { PARSE_FAILED, parse, parseId } from '../lib/validate.js';
-import { recomputeForTicket } from '../services/recompute.js';
+import { recomputeForTicket, recomputeOrder } from '../services/recompute.js';
 
 const SELECT =
   '*, order:orders(*, customer:customers(*)), mould:moulds(*), assignments:ticket_assignments(*, operative:operatives(*)), time:time_sessions(*)';
@@ -274,6 +276,140 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
       );
       await recomputeForTicket(t);
     }
+    return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+  });
+
+  // ── Despatch pipeline ──────────────────────────────────────────────────────
+  // Bulk despatch from the Ready to Despatch screen (ported from
+  // despatchSelected → _proceedDespatch → doDespatching). Gates:
+  //  1. COMP family gate — every member of a selected assembly's family must be
+  //     at "10. Ready to Despatch" (409 gate:'family' unless managerOverride).
+  //  2. Partial despatch — if an order's top-level non-RAW tickets aren't all
+  //     covered by the selection, 409 gate:'partial' unless confirmPartial;
+  //     despatched tickets are then flagged partialDespatch.
+  // Selected COMPs are expanded to include all their PART children.
+  app.post('/despatch', async (req, reply) => {
+    const body = parse(despatchTicketsSchema, req.body, reply);
+    if (body === PARSE_FAILED) return;
+
+    const SLIM = 'id,tn,type,detail,status,pct,netPrice,compParentId,orderId';
+    type Slim = {
+      id: number; tn: number | null; type: string; detail: string; status: string;
+      pct: number; netPrice: number; compParentId: number | null; orderId: number;
+    };
+    const selected = unwrap(
+      await db.from('tickets').select(SLIM).in('id', body.ticketIds).is('deletedAt', null),
+    ) as Slim[];
+    if (!selected.length) return reply.badRequest('No matching tickets to despatch');
+
+    const orderIds = [...new Set(selected.map((t) => t.orderId))];
+    const family = unwrap(
+      await db.from('tickets').select(SLIM).in('orderId', orderIds).is('deletedAt', null),
+    ) as Slim[];
+
+    // Gate 1: for ANY ticket in a COMP family, ALL members must be Ready to Despatch.
+    if (!body.managerOverride) {
+      const checked = new Set<number>();
+      const blocked: { tn: number | null; detail: string; notReady: unknown[] }[] = [];
+      for (const t of selected) {
+        const compId = t.type === 'COMP' ? t.id : t.compParentId;
+        if (compId == null || checked.has(compId)) continue;
+        checked.add(compId);
+        const check = familyReadyCheck(t, family);
+        if (!check.ready) {
+          const comp = family.find((x) => x.id === compId);
+          blocked.push({ tn: comp?.tn ?? t.tn, detail: comp?.detail ?? t.detail, notReady: check.notReady });
+        }
+      }
+      if (blocked.length) return reply.status(409).send({ gate: 'family', blocked });
+    }
+
+    // Gate 2: partial despatch — some top-level non-RAW tickets on an order are
+    // neither already Despatched nor in this selection.
+    const uncoveredOf = (oid: number) =>
+      family.filter(
+        (t) =>
+          t.orderId === oid && t.compParentId == null && t.type !== 'RAW' &&
+          t.status !== 'Despatched' && !selected.some((s) => s.id === t.id),
+      );
+    const partialOrderIds = orderIds.filter((oid) => uncoveredOf(oid).length > 0);
+    const isPartial = partialOrderIds.length > 0;
+    if (isPartial && !body.confirmPartial) {
+      const orders = unwrap(
+        await db.from('orders').select('id, orderNumber').in('id', partialOrderIds),
+      ) as { id: number; orderNumber: string }[];
+      return reply.status(409).send({
+        gate: 'partial',
+        orders: partialOrderIds.map((oid) => {
+          const tops = family.filter((t) => t.orderId === oid && t.compParentId == null && t.type !== 'RAW');
+          return {
+            orderNumber: orders.find((o) => o.id === oid)?.orderNumber ?? String(oid),
+            selected: selected.filter((s) => s.orderId === oid).length,
+            total: tops.length,
+          };
+        }),
+      });
+    }
+
+    // Expand: a despatched COMP takes all its PART children with it.
+    const expanded = [...selected];
+    for (const t of selected) {
+      if (t.type !== 'COMP') continue;
+      for (const p of family.filter((x) => x.compParentId === t.id)) {
+        if (!expanded.some((x) => x.id === p.id)) expanded.push(p);
+      }
+    }
+
+    const despatchDate = new Date().toISOString().slice(0, 10);
+    const completed = new Date().toISOString();
+    for (const t of expanded) {
+      unwrap(
+        await db.from('tickets').update({
+          status: 'Despatched', pct: 100, despatchDate, completed,
+          ...(isPartial ? { partialDespatch: true } : {}),
+        }).eq('id', t.id).select('id'),
+      );
+      unwrap(
+        await db.from('audit_log').insert({
+          entityType: 'ticket', entityId: t.id, field: 'status',
+          fromValue: t.status, toValue: 'Despatched',
+          note: isPartial ? 'Partial despatch' : (body.managerOverride ? 'Manager override — family not ready' : null),
+        }).select('id'),
+      );
+    }
+    for (const oid of orderIds) await recomputeOrder(oid);
+
+    const rows = unwrap(
+      await db.from('tickets').select(SELECT).in('id', expanded.map((t) => t.id)).order('id', { ascending: true }),
+    );
+    return { tickets: rows, partial: isPartial, despatchDate };
+  });
+
+  // Manager-PIN-authorised despatch of a single blocked ticket (COMP whose
+  // family isn't ready, or a lone PART) — ported from managerOverrideDespatch.
+  app.post('/:id/despatch-override', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const t = unwrap(
+      await db.from('tickets').select('status, orderId, compParentId')
+        .eq('id', id).is('deletedAt', null).maybeSingle(),
+    ) as ({ status: string } & TicketRef) | null;
+    if (!t) return reply.notFound('Ticket not found');
+
+    unwrap(
+      await db.from('tickets').update({
+        status: 'Despatched', pct: 100, managerOverride: true,
+        despatchDate: new Date().toISOString().slice(0, 10),
+        completed: new Date().toISOString(),
+      }).eq('id', id).select('id'),
+    );
+    unwrap(
+      await db.from('audit_log').insert({
+        entityType: 'ticket', entityId: id, field: 'manager_override',
+        fromValue: t.status, toValue: 'Despatched', note: 'Manager override despatch',
+      }).select('id'),
+    );
+    await recomputeForTicket(t);
     return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
   });
 

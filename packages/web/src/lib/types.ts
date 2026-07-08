@@ -100,6 +100,9 @@ export interface Ticket {
   resinType: string | null;
   deadline?: string | null;
   completed: string | null;
+  despatchDate: string | null;
+  partialDespatch: boolean;
+  managerOverride: boolean;
   assignments?: TicketAssignment[];
   time?: TimeSession[];
   parts?: Ticket[];

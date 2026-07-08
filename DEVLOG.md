@@ -1110,3 +1110,77 @@ Preflight sets buttons to `cursor:default`); disabled buttons get `not-allowed`.
   API endpoint (bulk, family gate, partial flag), Ready view selection UI +
   gating modals, Delivery Note + Invoice printable docs, Despatched view
   buttons (reprint / invoice→Completed / copy invoice). Then P2 → P5 in order.
+
+---
+
+## 2026-07-08 — Phase 1: Despatch pipeline + documents (gaps #1 #2)
+
+Full port of the prototype's despatch workflow — the first of the 5 agreed
+parity phases.
+
+**Done**
+- **DB migration** (`scripts/migrate-despatch.ts`, applied live; `schema.sql`
+  updated): tickets gain `despatchDate` (date), `partialDespatch`,
+  `managerOverride` (bools).
+  - **Infra win:** direct Postgres is still firewalled, but the self-hosted
+    Supabase exposes the meta service through Kong at **`POST /pg/query`**
+    (service-role key auth) — DDL now runs from here; the migration script
+    falls back to it automatically. No more Supabase-Studio hand-offs.
+- **Shared domain:** `familyReadyCheck` ported 1:1 (assembly + all parts must
+  be at "10. Ready to Despatch"; missing parts = suspicious → blocked);
+  `deriveOrderStatus` now never downgrades a `Completed` order back to
+  Despatched on recompute. New `despatchTicketsSchema`.
+- **API:**
+  - `POST /api/tickets/despatch` — bulk despatch (ported from
+    despatchSelected → _proceedDespatch → doDespatching): 409 `gate:'family'`
+    with the blocked assemblies unless `managerOverride`; 409 `gate:'partial'`
+    with per-order counts unless `confirmPartial`; selected COMPs expand to
+    include their PART children; stamps status/pct/despatchDate/completed +
+    partial flag, audit rows, order recompute; returns the despatched tickets
+    for the delivery note.
+  - `POST /api/tickets/:id/despatch-override` — single-ticket manager
+    override (blocked COMP / lone PART), `manager_override` audit entry.
+  - `POST /api/orders/:id/complete` — order → Completed with an
+    "Invoice printed" audit note (ported from printInvoiceAndComplete).
+- **Documents** (`web/src/lib/documents.ts`): `_buildDespatchHtml` +
+  `_buildInvoiceHtml` ported 1:1 (same CSS/layout/wording; DN-/PDN-/INV- refs,
+  partial banner, sign-off block, per-order subtotals, total row, payment
+  terms); `openDocument` popup with data-URL fallback.
+- **Ready view** (`pages/Ready.tsx`, replaces the flat status-filtered list):
+  select-all/selection toolbar + "📦 Despatch N selected"; ready items grouped
+  by order (checkbox, type badge, customer ref, spec, qty, despatch chip);
+  **Assembly family not ready** modal (blocked list + ⚠ Manager Override →
+  PIN); **Partial Despatch Warning** modal (confirm → flagged); blocked
+  assemblies table (n/N through QC + per-part status chips + PIN-gated
+  Override); parts-at-ready table (despatch via parent, Override); delivery
+  note opens on success, then navigates to Despatched.
+- **Despatched view** (`pages/Despatched.tsx`, replaces the Orders reuse):
+  order rows (status pill + PARTIAL badge, "x of y tickets", despatch date)
+  with **📄 Delivery Note** reprint, **🖨 Print Invoice** → order Completed,
+  and **🖨 Copy Invoice** once completed.
+- `Card` now accepts `className`; new hooks `useDespatchTickets`,
+  `useOverrideDespatch`, `useCompleteOrder`; `Ticket` type gains the three
+  despatch fields.
+
+**Verified**
+- All packages typecheck.
+- **API end-to-end (live DB):** 13-step script — family gate 409, partial gate
+  409, confirmed partial despatch (flag + date stamped), manager override,
+  order auto-derives Despatched, → Completed, Completed survives recompute,
+  audit entries (partial / manager_override / Invoice printed) all present.
+- **UI end-to-end (Playwright):** login → Ready renders ready + blocked
+  sections → select → partial modal → confirm → **Delivery Note popup**
+  (PDN ref + Partial banner + items) → lands on Despatched (PARTIAL badge) →
+  Print Invoice popup (totals + payment terms) → order Completed → button
+  flips to Copy Invoice. Zero console/page errors.
+
+**Notes**
+- QC Ref shows "—" (no `qcRef` field in the rebuild yet — not in the phase
+  plan; add if wanted).
+- Blocked-part chips show "#TBC" for tickets created while the order was
+  Pending — that's the known **tn=null bug, fixed in Phase 2**.
+
+**Next up**
+- **Phase 2:** Pending release flow ("Review & Advance") + tn back-fill bug +
+  packing checklist gate + family gating on ordinary status changes to
+  Despatched (gaps #3 #4 #5). Then P3 → P5.
