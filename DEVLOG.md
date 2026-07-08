@@ -1408,3 +1408,78 @@ the long-flagged bugs (COMP delete orphaning parts).
   card; order-detail bulk advance / schedule suggestion / quick
   add-to-catalogue; catalogue SKU generator; Moulds "Unlinked Catalogue"
   direct linking (gaps #14–#17).
+
+---
+
+## 2026-07-09 — Phase 5 (final): board extras, order-detail extras, SKU gen, unlinked linking
+
+Gaps #14–#17 — **the 5-phase parity plan is complete.**
+
+**Done**
+- **T-Card Board** (`Board.tsx`):
+  - **10 order colour palettes** (KB_PALETTES ported 1:1): cards are now
+    light coloured T-cards rotating by order — number/order in the palette
+    header colour, detail in the palette text colour, type-coloured left edge.
+  - **Right-click context menu** (ported from openKbContextMenu): operative
+    checkboxes (assign/unassign; unassigning stops that operative's timer),
+    per-assignee **Timers** with logged totals + Start/Stop, **Stop all**,
+    Close; positioned at the cursor, closes on outside click.
+  - **Cure prompt on drag into Gel Coat / Laminating** (ported from
+    kbDoMove → openCureTimerPrompt): preset chips 30m/1h/2h/4h + Custom
+    (defaults 60/120), "Start Timer →" moves the card and starts the cure
+    targeting the next stage.
+  - **"Needs more time"**: clicking an expired "✓ cure done" badge opens a
+    dark modal — **Confirm cure** (advances) or **⏱ Needs more time**
+    (re-opens the prompt and restarts the timer without moving).
+  - **Bulk stage move**: in By-Stage view the bulk bar now shows stage chips
+    ("Move to: …") and moves the selected cards (ported from
+    kbBulkStageConfirm); By-Operative keeps bulk assign.
+- **Order detail** (`OrderDetail.tsx`):
+  - **Bulk advance within the order** (ported from otAdvanceToStage):
+    checkboxes on ticket rows (RAW excluded) + a teal bar with a stage select
+    and "▶ Advance selected" behind a confirm.
+  - **Suggested Schedule panel** for existing orders (ported from
+    suggestScheduleHtml): walks the next 26 weeks filling spare capacity
+    (per-week prorated capacity minus other orders' committed hours) →
+    Total hours / Suggested W/C start / Suggested deadline (+1-week buffer);
+    **✓ Accept suggestion** sets wc + deadline (wc flows to tickets via the
+    existing PATCH); manual date + Set; confirmed state with **Change**.
+  - **+ Add to catalogue** header button → the New Product form
+    (quickAddToCatalogue equivalent).
+- **Catalogue SKU generator**: `generateSku` ported 1:1 to shared
+  (height/rotation/CW-CCW/lanes/MK extraction + abbreviation table +
+  uniqueness suffix). `CatalogueForm` gains a **⚙** button beside the SKU
+  field (fills from product name); Catalogue toolbar gains **⚙ Generate
+  SKUs** — previews auto-built SKUs for every template missing one and
+  bulk-saves them.
+- **Moulds → Unlinked Catalogue**: each unlinked part row now has a
+  **Link mould** select — `PATCH /api/catalogue/:id/parts/:partId`
+  (new endpoint) sets the part's default mould so future tickets inherit it
+  (ported from linkPartToMould).
+
+**Verified**
+- All packages typecheck.
+- **UI (Playwright), 6 groups:** card palette applied (computed bg =
+  palette lime); right-click menu assigns an operative; a real mouse drag of
+  a card into Gel Coat opened the cure prompt and landed the ticket at
+  "4. Gel Coat" with a 60-min cure started; bulk stage move via the stage
+  chips; Suggested Schedule accepted (deadline 2026-07-24, W/C 13/07/2026);
+  in-order bulk advance; + Add to catalogue opens the product form;
+  ⚙ Generate SKUs produced and saved **2LWV-2050** for "Twin Lane Wavy
+  Slide 2050mm MK3"; unlinked part linked to a mould from the tab. Zero
+  console/page errors.
+
+**Notes**
+- "View spec from card" is served by the existing card-click → ticket detail
+  (the prototype's kb popup equivalent); catalogue spec documents open from
+  the Catalogue table's 📄 link. A matched-template spec button inside the
+  ticket modal can be added later if wanted.
+- The prototype's kbApplyMove "moving from Spec/Materials" confirmation on
+  drag was not ported (drag stays 1-step); the QC-ref + packing + family
+  gates all still apply through the dropdown/advance paths and the server.
+
+**🎉 Parity plan complete.** All 5 critical workflows and the ~13 major
+features from the 2026-07-08 audit are ported. Remaining known items are the
+security/housekeeping flags from 2026-06-30 (DEFAULT_ROLE=admin, empty-JWT
+acceptance, rotate exposed secrets, remove login prefill) and optional
+polish (e.g. per-order expand groups in All Orders, History hours grid).

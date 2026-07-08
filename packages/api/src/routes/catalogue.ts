@@ -1,7 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { catalogueInputSchema } from '@bowson/shared';
+import { z } from 'zod';
 import { db, unwrap } from '../supabase.js';
 import { PARSE_FAILED, parse, parseId } from '../lib/validate.js';
+
+const partMouldSchema = z.object({ mouldId: z.number().int().nullable() });
 
 const SELECT = '*, parts:catalogue_parts(*, mould:moulds(*)), hardware:catalogue_hardware(*)';
 
@@ -35,6 +38,30 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     if (hardware.length)
       unwrap(await db.from('catalogue_hardware').insert(hardware.map((h) => ({ ...h, catalogueId: id }))).select('id'));
     return reply.status(201).send(await fetchOne(id));
+  });
+
+  // Link a single catalogue part to its default mould (ported from
+  // linkPartToMould on the Moulds "Unlinked Catalogue" tab). New tickets
+  // instantiated from this product inherit the mould automatically.
+  app.patch('/:id/parts/:partId', async (req, reply) => {
+    const id = parseId((req.params as { id: string }).id, reply);
+    if (id === PARSE_FAILED) return;
+    const partId = parseId((req.params as { partId: string }).partId, reply);
+    if (partId === PARSE_FAILED) return;
+    const body = parse(partMouldSchema, req.body, reply);
+    if (body === PARSE_FAILED) return;
+    const part = unwrap(
+      await db.from('catalogue_parts').select('id').eq('id', partId).eq('catalogueId', id).maybeSingle(),
+    );
+    if (!part) return reply.notFound('Catalogue part not found');
+    if (body.mouldId != null) {
+      const mould = unwrap(
+        await db.from('moulds').select('id').eq('id', body.mouldId).is('deletedAt', null).maybeSingle(),
+      );
+      if (!mould) return reply.badRequest('mouldId does not reference a mould');
+    }
+    unwrap(await db.from('catalogue_parts').update({ mouldId: body.mouldId }).eq('id', partId).select('id'));
+    return fetchOne(id);
   });
 
   app.patch('/:id', async (req, reply) => {

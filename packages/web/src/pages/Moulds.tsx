@@ -97,7 +97,7 @@ export function Moulds() {
         {tab === 'board' && <BoardTab moulds={rows} tickets={liveTickets} />}
         {tab === 'schedule' && <ScheduleTab moulds={rows} tickets={liveTickets} />}
         {tab === 'unassigned' && <UnassignedTab moulds={rows} tickets={liveTickets} />}
-        {tab === 'unlinked' && <UnlinkedTab catalogue={cat} />}
+        {tab === 'unlinked' && <UnlinkedTab catalogue={cat} moulds={moulds ?? []} />}
       </Content>
     </>
   );
@@ -347,10 +347,24 @@ function ScheduleTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }
 }
 
 // ─── Unlinked catalogue (parts with no default mould) ────────────────────────
-function UnlinkedTab({ catalogue }: { catalogue: Catalogue[] }) {
+function UnlinkedTab({ catalogue, moulds }: { catalogue: Catalogue[]; moulds: Mould[] }) {
+  const qc = useQueryClient();
+  const [busyPart, setBusyPart] = useState<number | null>(null);
   const groups = catalogue
     .map((c) => ({ c, parts: c.parts.filter((p) => !p.mouldId) }))
     .filter((g) => g.parts.length > 0);
+
+  /** Link a catalogue part to its default mould (ported from linkPartToMould). */
+  async function link(catalogueId: number, partId: number, mouldId: number) {
+    setBusyPart(partId);
+    try {
+      await apiClient.patch(`/api/catalogue/${catalogueId}/parts/${partId}`, { mouldId });
+    } finally {
+      setBusyPart(null);
+      qc.invalidateQueries({ queryKey: ['catalogue'] });
+      qc.invalidateQueries({ queryKey: ['moulds'] });
+    }
+  }
 
   if (groups.length === 0) {
     return (
@@ -366,16 +380,30 @@ function UnlinkedTab({ catalogue }: { catalogue: Catalogue[] }) {
     <>
       <div className="mb-3 text-xs text-text3">
         {groups.reduce((n, g) => n + g.parts.length, 0)} part(s) across {groups.length} product(s) have no default mould.
+        Linking them here means new tickets created from these products automatically know which mould to use.
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {groups.map(({ c, parts }) => (
           <Card key={c.id} title={`${c.name}${c.code ? ` · ${c.code}` : ''}`}>
-            <Table head={['Part', 'Drawing', 'Hrs']}>
+            <Table head={['Part', 'Drawing', 'Hrs', 'Link mould']}>
               {parts.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-1.5">{p.detail}</td>
                   <td className="px-3 py-1.5 text-text3">{p.drawing ?? '—'}</td>
                   <td className="px-3 py-1.5 tabular-nums text-text2">{p.hrs}</td>
+                  <td className="px-3 py-1.5">
+                    <select
+                      value=""
+                      disabled={busyPart === p.id}
+                      onChange={(e) => e.target.value && void link(c.id, p.id, Number(e.target.value))}
+                      className="rounded-md border border-teal bg-surface px-1.5 py-1 text-[11px] outline-none"
+                    >
+                      <option value="">— Select a mould —</option>
+                      {moulds.map((m) => (
+                        <option key={m.id} value={m.id}>{m.ref}{m.name ? ` (${m.name.slice(0, 40)})` : ''}</option>
+                      ))}
+                    </select>
+                  </td>
                 </tr>
               ))}
             </Table>

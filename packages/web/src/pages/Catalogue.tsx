@@ -1,10 +1,13 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { generateSku } from '@bowson/shared';
 import { useCatalogue, useCreateCatalogue, useDeleteCatalogue, type CatalogueFormInput } from '../lib/hooks';
 import { Button, Card, Content, Modal, PageHeader, QueryState, Table } from '../components/ui';
 import { CatalogueForm } from '../components/CatalogueForm';
 import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
 import { parseCsv } from '../lib/csv';
+import { apiClient } from '../lib/api';
 import type { Catalogue as Cat } from '../lib/types';
 
 const isSingle = (c: Cat) => c.singlePiece || c.parts.length <= 1;
@@ -21,6 +24,7 @@ export function Catalogue() {
   const [detail, setDetail] = useState<Cat | null>(null);
   const [editing, setEditing] = useState<Cat | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSkuGen, setShowSkuGen] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const create = useCreateCatalogue();
@@ -87,6 +91,7 @@ export function Catalogue() {
       )}
       {editing && <CatalogueForm catalogue={editing} onClose={() => setEditing(null)} />}
       {showCreate && <CatalogueForm onClose={() => setShowCreate(false)} />}
+      {showSkuGen && <SkuGeneratorModal catalogue={rows} onClose={() => setShowSkuGen(false)} />}
       <PageHeader title="Product Catalogue" sub={`${rows.length} template${rows.length === 1 ? '' : 's'}`} globalActions={false} />
       <Content>
         {/* Toolbar */}
@@ -95,6 +100,7 @@ export function Catalogue() {
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onImport} />
             <Button onClick={() => fileRef.current?.click()} disabled={create.isPending}>{create.isPending ? 'Importing…' : '⭱ Import CSV'}</Button>
             <Button onClick={exportCsv}>⭳ Export CSV</Button>
+            <Button onClick={() => setShowSkuGen(true)}>⚙ Generate SKUs</Button>
             <Button variant="primary" onClick={() => setShowCreate(true)}>+ New template</Button>
           </div>
         )}
@@ -213,6 +219,76 @@ function CatalogueDetail({ cat, canManage, onClose, onEdit }: { cat: Cat; canMan
         </ul>
       ) : (
         <div className="text-xs text-text3">—</div>
+      )}
+    </Modal>
+  );
+}
+
+/** Bulk SKU generator — auto-builds SKUs for templates that have none
+ * (prototype generateSku), previews them, and saves in one go. */
+function SkuGeneratorModal({ catalogue, onClose }: { catalogue: Cat[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(0);
+
+  // Generate for every template missing a SKU, keeping uniqueness against
+  // both existing SKUs and the ones generated earlier in this pass.
+  const preview = useMemo(() => {
+    const known: { code: string | null; productCode: string }[] = catalogue.map((c) => ({ code: c.code, productCode: c.productCode }));
+    const out: { id: number; productCode: string; name: string; sku: string }[] = [];
+    for (const c of catalogue) {
+      if (c.code) continue;
+      const sku = generateSku(c.productCode, c.name, known);
+      known.push({ code: sku, productCode: c.productCode });
+      out.push({ id: c.id, productCode: c.productCode, name: c.name, sku });
+    }
+    return out;
+  }, [catalogue]);
+
+  async function save() {
+    setBusy(true);
+    let n = 0;
+    try {
+      for (const p of preview) {
+        await apiClient.patch(`/api/catalogue/${p.id}`, { code: p.sku });
+        n++;
+        setDone(n);
+      }
+    } finally {
+      setBusy(false);
+      qc.invalidateQueries({ queryKey: ['catalogue'] });
+      onClose();
+    }
+  }
+
+  return (
+    <Modal
+      title="⚙ Generate SKUs"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!preview.length || busy} onClick={() => void save()}>
+            {busy ? `Saving… ${done}/${preview.length}` : `Save ${preview.length} SKU${preview.length !== 1 ? 's' : ''}`}
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-xs text-text2">
+        Auto-builds shop-floor SKUs from the product name (height, rotation, lanes, MK…). Only templates without a SKU are affected.
+      </p>
+      {preview.length === 0 ? (
+        <div className="py-6 text-center text-xs text-text3">All templates already have a SKU. ✓</div>
+      ) : (
+        <Table head={['Code', 'Product', 'Generated SKU']}>
+          {preview.map((p) => (
+            <tr key={p.id} className="border-b border-border last:border-0">
+              <td className="px-3 py-1.5 text-[11px] font-bold text-teal">{p.productCode}</td>
+              <td className="max-w-56 truncate px-3 py-1.5 text-xs">{p.name}</td>
+              <td className="px-3 py-1.5 font-mono text-xs font-bold">{p.sku}</td>
+            </tr>
+          ))}
+        </Table>
       )}
     </Modal>
   );

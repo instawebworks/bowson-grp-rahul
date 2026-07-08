@@ -1,24 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { nextStage } from '@bowson/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  GRP_STAGES,
+  HRS_PER_DAY,
+  LIVE_STATUSES,
+  STAGE_HRS_REMAINING,
+  formatWc,
+  isoDate,
+  nextStage,
+  nextWeeks,
+  wcForDeadline,
+  wcKey,
+  weekCapacityFor,
+} from '@bowson/shared';
 import {
   useAssignMould,
   useConfirmCure,
   useDeleteOrder,
   useMoulds,
+  useOperatives,
   useOrder,
   useOrderAudit,
   useSetCure,
+  useSettings,
+  useTickets,
+  useUpdateOrder,
 } from '../lib/hooks';
+import { apiClient } from '../lib/api';
 import { Button, Card, Content, Modal, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
 import { TicketStatusSelect } from '../components/TicketStatusSelect';
 import { EditTicketModal } from '../components/EditTicketModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { EditOrderForm } from '../components/EditOrderForm';
+import { CatalogueForm } from '../components/CatalogueForm';
 import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
-import type { Ticket } from '../lib/types';
+import type { Order, Ticket } from '../lib/types';
 
 const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
 const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
@@ -128,6 +147,8 @@ function TicketRow({
   now,
   indent,
   onEdit,
+  selected,
+  onToggle,
 }: {
   ticket: Ticket;
   orderId: number;
@@ -135,9 +156,16 @@ function TicketRow({
   now: number;
   indent?: boolean;
   onEdit?: () => void;
+  selected?: boolean;
+  onToggle?: (checked: boolean) => void;
 }) {
   return (
     <tr className="border-b border-border last:border-0">
+      <td className="w-8 px-3 py-2">
+        {onToggle && ticket.type !== 'RAW' && (
+          <input type="checkbox" className="accent-teal" checked={!!selected} onChange={(e) => onToggle(e.target.checked)} />
+        )}
+      </td>
       <td className="px-3 py-2 tabular-nums text-text3">{ticket.tn ?? '—'}</td>
       <td className="px-3 py-2"><TypeBadge type={ticket.type} /></td>
       <td className={`px-3 py-2 ${indent ? 'pl-8 text-text2' : 'font-medium'}`}>
@@ -164,14 +192,43 @@ export function OrderDetail() {
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showCatalogue, setShowCatalogue] = useState(false);
   const [deleteFlow, setDeleteFlow] = useState<'pin' | 'confirm' | null>(null);
   const [editTicket, setEditTicket] = useState<{ ticket: Ticket; parts: Ticket[] } | null>(null);
+  const [bulkSel, setBulkSel] = useState<Set<number>>(new Set());
+  const [bulkStage, setBulkStage] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const qc = useQueryClient();
   const { canManage } = useAuth();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  /** Bulk advance the ticked tickets to a stage (ported from otAdvanceToStage). */
+  async function bulkAdvance() {
+    if (!bulkStage || !bulkSel.size) return;
+    if (!window.confirm(`Move ${bulkSel.size} ticket${bulkSel.size !== 1 ? 's' : ''} to "${bulkStage}"?`)) return;
+    setBulkBusy(true);
+    try {
+      for (const tid of bulkSel) {
+        try {
+          await apiClient.post(`/api/tickets/${tid}/status`, { status: bulkStage });
+        } catch {
+          /* server gate (family) — skip */
+        }
+      }
+    } finally {
+      setBulkBusy(false);
+      setBulkSel(new Set());
+      setBulkStage('');
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    }
+  }
 
   if (isLoading) return <><PageHeader title="Order" /><Content><div className="text-xs text-text3">Loading…</div></Content></>;
   if (error || !order)
@@ -201,6 +258,7 @@ export function OrderDetail() {
         />
       )}
       {showEdit && <EditOrderForm order={order} onClose={() => setShowEdit(false)} />}
+      {showCatalogue && <CatalogueForm onClose={() => setShowCatalogue(false)} />}
       {editTicket && (
         <EditTicketModal ticket={editTicket.ticket} parts={editTicket.parts} onClose={() => setEditTicket(null)} />
       )}
@@ -246,6 +304,7 @@ export function OrderDetail() {
           <>
             <Link to="/orders"><Button>← All Orders</Button></Link>
             {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
+            {canManage && <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>}
             {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
             {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
           </>
@@ -264,10 +323,27 @@ export function OrderDetail() {
           title={`Tickets (${tickets.length})`}
           actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
         >
-          <Table head={['TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
+          {canManage && bulkSel.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-teal bg-teal-l px-3.5 py-2">
+              <span className="text-xs font-bold text-teal">{bulkSel.size} selected</span>
+              <select
+                value={bulkStage}
+                onChange={(e) => setBulkStage(e.target.value)}
+                className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
+              >
+                <option value="">— Move to stage —</option>
+                {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <Button variant="primary" disabled={!bulkStage || bulkBusy} onClick={() => void bulkAdvance()}>
+                ▶ Advance selected
+              </Button>
+              <Button className="ml-auto" onClick={() => setBulkSel(new Set())}>✕ Clear</Button>
+            </div>
+          )}
+          <Table head={['', 'TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
             {tops.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-xs text-text3">
+                <td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">
                   No tickets yet — click “+ Add ticket” to add items (Step 2).
                 </td>
               </tr>
@@ -281,10 +357,25 @@ export function OrderDetail() {
                 now={now}
                 parts={t.type === 'COMP' ? partsOf(t.id) : []}
                 onEdit={canManage ? (ticket, parts) => setEditTicket({ ticket, parts }) : undefined}
+                bulkSel={canManage ? bulkSel : undefined}
+                onBulkToggle={
+                  canManage
+                    ? (tid, checked) =>
+                        setBulkSel((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(tid); else next.delete(tid);
+                          return next;
+                        })
+                    : undefined
+                }
               />
             ))}
           </Table>
         </Card>
+
+        {canManage && (
+          <SuggestSchedulePanel order={order} orderTickets={tickets} />
+        )}
 
         {order.themeImage && (
           <div className="mt-4">
@@ -306,6 +397,8 @@ function FragmentRow({
   now,
   parts,
   onEdit,
+  bulkSel,
+  onBulkToggle,
 }: {
   ticket: Ticket;
   orderId: number;
@@ -313,6 +406,8 @@ function FragmentRow({
   now: number;
   parts: Ticket[];
   onEdit?: (ticket: Ticket, parts: Ticket[]) => void;
+  bulkSel?: Set<number>;
+  onBulkToggle?: (ticketId: number, checked: boolean) => void;
 }) {
   return (
     <>
@@ -322,6 +417,8 @@ function FragmentRow({
         moulds={moulds}
         now={now}
         onEdit={onEdit ? () => onEdit(ticket, parts) : undefined}
+        selected={bulkSel?.has(ticket.id)}
+        onToggle={onBulkToggle ? (checked) => onBulkToggle(ticket.id, checked) : undefined}
       />
       {parts.map((p) => (
         <TicketRow
@@ -332,9 +429,120 @@ function FragmentRow({
           now={now}
           indent
           onEdit={onEdit ? () => onEdit(p, []) : undefined}
+          selected={bulkSel?.has(p.id)}
+          onToggle={onBulkToggle ? (checked) => onBulkToggle(p.id, checked) : undefined}
         />
       ))}
     </>
+  );
+}
+
+/** Suggested Schedule for an existing order — ported from suggestScheduleHtml:
+ * walk the coming weeks filling spare capacity until the order's hours are
+ * absorbed, then suggest a start week + deadline (with a 1-week buffer). */
+function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTickets: Ticket[] }) {
+  const { data: operatives } = useOperatives();
+  const { data: allTickets } = useTickets();
+  const { data: settings } = useSettings();
+  const update = useUpdateOrder(order.id);
+  const [manual, setManual] = useState('');
+
+  const totalHrs = orderTickets.reduce((s, t) => s + (t.hrs || 0), 0);
+  const ops = operatives ?? [];
+  const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
+
+  const suggestion = useMemo(() => {
+    const committed = new Map<string, number>();
+    for (const t of allTickets ?? []) {
+      if (t.orderId === order.id) continue;
+      if (!(LIVE_STATUSES as readonly string[]).includes(t.status)) continue;
+      const key = wcKey(t.wc);
+      if (!key) continue;
+      committed.set(key, (committed.get(key) ?? 0) + (t.hrs || 0) * (weights[t.status] ?? 1));
+    }
+    let hrsRemaining = totalHrs;
+    let startKey: string | null = null;
+    let endKey: string | null = null;
+    let weeksNeeded = 0;
+    const weekKeys = nextWeeks(26).map((w) => wcKey(w));
+    for (const key of weekKeys) {
+      const cap = weekCapacityFor(ops, key);
+      const spare = cap - (committed.get(key) ?? 0);
+      if (cap > 0 && spare <= 0) continue; // week is full — skip
+      if (!startKey) startKey = key;
+      hrsRemaining -= cap > 0 ? Math.max(spare, 0) : HRS_PER_DAY * 5;
+      weeksNeeded++;
+      endKey = key;
+      if (hrsRemaining <= 0) break;
+    }
+    startKey ??= weekKeys[0]!;
+    endKey ??= startKey;
+    const end = new Date(endKey);
+    end.setDate(end.getDate() + 11); // +1 week buffer, land on the Friday
+    const noCapacity = weekKeys.slice(0, 8).every((k) => weekCapacityFor(ops, k) === 0);
+    return { startKey, deadline: isoDate(end), weeksNeeded, noCapacity };
+  }, [allTickets, ops, order.id, totalHrs, weights]);
+
+  if (!orderTickets.length) return null;
+  const alreadySet = !!order.deadline;
+  const startLabel = formatWc(new Date(suggestion.startKey));
+
+  return (
+    <Card title="Suggested Schedule" className="mt-4">
+      <div className="p-3.5">
+        <div className="mb-2.5 grid grid-cols-3 gap-2.5">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Total hours</div>
+            <div className="text-xl font-bold">{totalHrs}h</div>
+            <div className="text-[10px] text-text3">{orderTickets.length} ticket{orderTickets.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Suggested W/C start</div>
+            <div className="text-[15px] font-bold text-teal">{startLabel}</div>
+            <div className="text-[10px] text-text3">
+              {suggestion.noCapacity ? 'Estimate only' : `${suggestion.weeksNeeded} week${suggestion.weeksNeeded !== 1 ? 's' : ''}`} of production
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Suggested deadline</div>
+            <div className="text-[15px] font-bold text-teal">{suggestion.deadline}</div>
+            <div className="text-[10px] text-text3">inc. 1 week buffer</div>
+          </div>
+        </div>
+        {suggestion.noCapacity && (
+          <div className="mb-2 text-[10px] text-amber">⚠ Set operative hours in Schedule for accurate suggestions</div>
+        )}
+        {alreadySet ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-teal-l px-2.5 py-2 text-[11px] text-teal">
+            ✓ Deadline confirmed: <strong>{order.deadline!.slice(0, 10)}</strong> · W/C: <strong>{order.wc ?? '—'}</strong>
+            <Button onClick={() => update.mutate({ deadline: null, wc: null })}>Change</Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              disabled={update.isPending}
+              onClick={() => update.mutate({ wc: startLabel, deadline: suggestion.deadline })}
+            >
+              ✓ Accept suggestion
+            </Button>
+            <span className="text-[11px] text-text3">or set manually:</span>
+            <input
+              type="date"
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
+            />
+            <Button
+              disabled={!manual || update.isPending}
+              onClick={() => update.mutate({ deadline: manual, wc: wcForDeadline(manual) })}
+            >
+              Set
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
