@@ -1035,3 +1035,78 @@ Playwright: abandon now `DELETE → 204` and the modal closes. Affected every de
 
 **Also:** global `cursor: pointer` for buttons/selects/label-checkboxes (Tailwind v4
 Preflight sets buttons to `cursor:default`); disabled buttons get `not-allowed`.
+
+---
+
+## 2026-07-08 — Parity audit vs t-card.html: gap list + fix plan agreed
+
+**Done**
+- Full feature-parity audit of the rebuild against the original `t-card.html`
+  prototype (all ~330 prototype functions mapped; every suspected gap verified
+  in the rebuild's code, not just assumed).
+- Result: core CRUD, board, timers, moulds, catalogue, imports and settings are
+  faithful — but **5 critical workflows and ~13 major features are missing**.
+- Agreed a 5-phase fix plan with the user (est. 11–15h total). **Next session
+  starts Phase 1.**
+
+**Missing — critical**
+1. **Despatch pipeline** — `/ready` is a read-only list. Missing: ticket
+   selection + "Despatch selected", COMP family-ready gating (+ manager-PIN
+   override), partial-despatch warning/flag, printable **Delivery Note** and
+   **Invoice** documents (prototype `_buildDespatchHtml` L7287 /
+   `_buildInvoiceHtml` L7338), per-ticket override despatch, despatch banner.
+2. **Despatched view actions** — reprint Delivery Note, Print Invoice → order
+   becomes **Completed**, Copy Invoice (prototype L2503).
+3. **Pending release flow + tn BUG** — no "Review & Advance" release; tickets
+   created while order is Pending get `tn=null` forever (API
+   `orders.ts` L122 only assigns tn when order not Pending; nothing back-fills;
+   `POST /api/tickets` never sets tn at all).
+4. **Packing checklist gate** on advance into Packing (hardware from order /
+   catalogue, tick + qty + notes, saved to order) — prototype L3951.
+5. **Family-ready gating on status changes** to Despatched (prototype
+   `doAdvance` L4039) — rebuild dropdowns allow ungated jumps.
+
+**Missing — major**
+6. Bulk ops on All Tickets (advance selected / to stage, bulk status modal,
+   bulk assign operative, inline row advance, per-order expand groups).
+7. In Production row actions (advance/reverse, parts-pending block, Qty/Spec/
+   Days-left columns, Export CSV).
+8. Per-column filter inputs on Orders / Tickets / In Prod tables.
+9. Dashboard: "Cannot Produce" blocker alerts (mould maintenance / no mould) +
+   Overdue Orders table.
+10. Schedule: per-week day-hour overrides (rebuild edits standard pattern for
+    ALL weeks — `Schedule.tsx` uses one `weekCapacity` for every week);
+    16-week planner (now 8); Export Hours CSV; current-week proration.
+11. Manager return-to-production override on despatched tickets.
+12. Delete order / delete ticket UI on existing records (PIN-gated).
+13. Edit existing ticket fields after creation (detail/spec/hrs/price).
+14. Order detail: bulk advance within order, schedule suggestion on existing
+    orders, quick add-to-catalogue.
+15. Board: right-click context menu (ops toggle, stop all timers), bulk stage
+    move, cure prompt on drag into Gel/Lam + "needs more time" modal, 10 order
+    colour palettes on cards, view spec from card.
+16. Catalogue SKU generator (auto-build + preview + bulk save).
+17. Moulds "Unlinked Catalogue" tab: link part → mould directly from the tab.
+
+**Decisions**
+- Fix order (phases, commit after each):
+  **P1** Despatch pipeline + documents + Despatched actions (#1 #2, ~3–4h) —
+  needs ticket fields `despatchDate`/`partialDespatch`/`managerOverride` + a
+  despatch endpoint + SQL migration.
+  **P2** Release flow + tn back-fill bug + packing checklist + family gating
+  (#3 #4 #5, ~2–3h) — needs `packingChecklist`/`packingNotes` on orders.
+  **P3** Bulk ops + table actions/filters + delete/edit (#6 #7 #8 #11 #12 #13,
+  ~2–3h).
+  **P4** Dashboard blockers + Schedule overrides/16wk/hours CSV (#9 #10, ~2h) —
+  needs week-overrides table.
+  **P5** Board extras + order-detail extras + SKU gen + unlinked linking
+  (#14–#17 + minors, ~2–3h).
+- Documents ported 1:1 from prototype print HTML — no redesign.
+- Intentionally NOT porting: save-to-HTML-file snapshot, localStorage
+  persistence (replaced by Supabase).
+
+**Next up**
+- **Phase 1: Despatch pipeline** — schema migration (despatch fields), despatch
+  API endpoint (bulk, family gate, partial flag), Ready view selection UI +
+  gating modals, Delivery Note + Invoice printable docs, Despatched view
+  buttons (reprint / invoice→Completed / copy invoice). Then P2 → P5 in order.
