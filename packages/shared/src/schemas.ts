@@ -37,6 +37,8 @@ export const operativeInputSchema = z.object({
   dayPattern: z.array(z.number().nonnegative()).default([]),
   /** Per-week day-hour overrides keyed "<mondayIso>_d<dayIdx>" (planner). */
   dayHrs: z.record(z.number().nonnegative()).optional(),
+  /** Hourly pay rate £ (shown on the operative card). */
+  payRate: z.number().nonnegative().nullish(),
 });
 export type OperativeInput = z.infer<typeof operativeInputSchema>;
 

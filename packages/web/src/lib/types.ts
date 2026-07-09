@@ -18,6 +18,8 @@ export interface Operative {
   dayPattern: number[];
   /** Per-week day-hour overrides keyed "<mondayIso>_d<dayIdx>" (0=Mon…6=Sun). */
   dayHrs: Record<string, number> | null;
+  /** Hourly pay rate £. */
+  payRate: number | null;
 }
 
 export interface Mould {
@@ -106,6 +108,7 @@ export interface Ticket {
   despatchDate: string | null;
   partialDespatch: boolean;
   managerOverride: boolean;
+  themeImage: string | null;
   assignments?: TicketAssignment[];
   time?: TimeSession[];
   parts?: Ticket[];

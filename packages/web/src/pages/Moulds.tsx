@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isoDate, mondayOf, wcKey } from '@bowson/shared';
-import { useAssignMould, useCatalogue, useMoulds, useTickets } from '../lib/hooks';
+import { useAssignMould, useCatalogue, useMoulds, useTickets, useUpdateMould } from '../lib/hooks';
 import { apiClient } from '../lib/api';
 import { Button, Card, Content, PageHeader, QueryState, StatusPill, Table } from '../components/ui';
 import { MouldForm } from '../components/MouldForm';
+import { CatalogueForm } from '../components/CatalogueForm';
 import { useAuth } from '../lib/auth';
 import { downloadCsv, parseCsv } from '../lib/csv';
+import { cureState, fmtCureMins } from '../lib/format';
 import type { Catalogue, Mould, Ticket } from '../lib/types';
 
 type Tab = 'register' | 'board' | 'unassigned' | 'schedule' | 'unlinked';
@@ -131,6 +133,10 @@ function RegisterTab({
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+  const visible = rows.filter(
+    (m) => !filter.trim() || [m.ref, m.name, m.notes].filter(Boolean).join(' ').toLowerCase().includes(filter.toLowerCase()),
+  );
 
   async function onImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -165,6 +171,12 @@ function RegisterTab({
       title="Register"
       actions={
         <div className="flex gap-1.5">
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter ref / name / notes…"
+            className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+          />
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onImport} />
           <Button onClick={() => fileRef.current?.click()}>⭱ Import CSV</Button>
           <Button
@@ -186,10 +198,10 @@ function RegisterTab({
       {importMsg && <div className="border-b border-border bg-teal-l/40 px-3 py-2 text-xs text-teal">{importMsg}</div>}
       <Table head={['Ref', 'Name', 'Capacity', 'Status', 'Notes', '']}>
         <QueryState isLoading={isLoading} error={error} colSpan={6} />
-        {!isLoading && !error && rows.length === 0 && (
-          <tr><td colSpan={6} className="px-3 py-10 text-center text-xs text-text3">No moulds yet.</td></tr>
+        {!isLoading && !error && visible.length === 0 && (
+          <tr><td colSpan={6} className="px-3 py-10 text-center text-xs text-text3">No moulds{filter ? ' match the filter' : ' yet'}.</td></tr>
         )}
-        {rows.map((m) => (
+        {visible.map((m) => (
           <tr key={m.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => onEdit(m)}>
             <td className="px-3 py-2 font-semibold">{m.ref}</td>
             <td className="px-3 py-2">{m.name ?? '—'}</td>
@@ -215,41 +227,117 @@ const OCC_COLOR: Record<string, string> = {
 };
 
 function BoardTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
+  const assign = useAssignMould();
+  const update = useUpdateMould();
+  const [now] = useState(() => Date.now());
   if (moulds.length === 0) return <div className="text-xs text-text3">No moulds yet.</div>;
-  return (
-    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-      {moulds.map((m) => {
-        const { active, queued, status } = occupancy(m, tickets);
-        return (
-          <Card key={m.id} title={`${m.ref}${m.name ? ` · ${m.name}` : ''}`}>
-            <div className="p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ color: OCC_COLOR[status], backgroundColor: `${OCC_COLOR[status]}1a` }}>
-                  {status}
-                </span>
-                <span className="text-[11px] text-text3">{active.length}/{m.qty} in use</span>
-              </div>
-              <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-text3">In mould</div>
-              {active.length ? active.map((t) => <TicketLine key={t.id} t={t} />) : <div className="text-xs text-text3">—</div>}
-              {queued.length > 0 && (
-                <>
-                  <div className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-text3">Queued</div>
-                  {queued.map((t) => <TicketLine key={t.id} t={t} />)}
-                </>
+
+  // Grouped like the prototype's mould board: In Use / Available / Maintenance.
+  const withOcc = moulds.map((m) => ({ m, ...occupancy(m, tickets) }));
+  const groups: { label: string; items: typeof withOcc }[] = [
+    { label: '● In Use', items: withOcc.filter((x) => x.status === 'Partial' || x.status === 'Full') },
+    { label: '○ Available', items: withOcc.filter((x) => x.status === 'Free') },
+    { label: '⚠ Maintenance', items: withOcc.filter((x) => x.status === 'Maintenance') },
+  ];
+  // Tickets waiting for a mould with none assigned — candidates for quick-assign.
+  const unassignedQueue = tickets.filter(
+    (t) => t.status === QUEUE && !t.mouldId && t.type !== 'RAW' && t.type !== 'COMP',
+  );
+
+  function quickAssign(m: Mould, ticketId: number) {
+    if (!ticketId) return;
+    assign.mutate({ ticketId, mouldId: m.id });
+  }
+
+  const MouldCard = ({ m, active, queued, status }: (typeof withOcc)[number]) => {
+    // Tickets stranded by this mould's maintenance (assigned + queueing).
+    const stranded = status === 'Maintenance' ? tickets.filter((t) => t.mouldId === m.id && t.status === QUEUE) : [];
+    return (
+      <Card key={m.id} title={`${m.ref}${m.name ? ` · ${m.name}` : ''}`}>
+        <div className="p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ color: OCC_COLOR[status], backgroundColor: `${OCC_COLOR[status]}1a` }}>
+              {status}
+            </span>
+            <span className="text-[11px] text-text3">{active.length}/{m.qty} in use</span>
+          </div>
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-text3">In mould</div>
+          {active.length ? (
+            active.map((t) => <TicketLine key={t.id} t={t} now={now} onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })} />)
+          ) : (
+            <div className="text-xs text-text3">—</div>
+          )}
+          {queued.length > 0 && (
+            <>
+              <div className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-text3">Queued</div>
+              {queued.map((t) => <TicketLine key={t.id} t={t} now={now} onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })} />)}
+            </>
+          )}
+          {status !== 'Maintenance' && status !== 'Full' && unassignedQueue.length > 0 && (
+            <select
+              value=""
+              disabled={assign.isPending}
+              onChange={(e) => quickAssign(m, Number(e.target.value))}
+              className="mt-2 w-full rounded-md border border-teal bg-surface px-2 py-1.5 text-[11px] outline-none"
+            >
+              <option value="">+ Assign next ticket…</option>
+              {unassignedQueue.map((t) => (
+                <option key={t.id} value={t.id}>#{t.tn ?? 'TBC'} {t.detail.slice(0, 40)}</option>
+              ))}
+            </select>
+          )}
+          {status === 'Maintenance' && (
+            <div className="mt-2 rounded-lg border border-amber bg-amber-l/40 px-2.5 py-2">
+              {m.notes && <div className="mb-1 text-[10px] italic text-text2">{m.notes}</div>}
+              {stranded.length > 0 && (
+                <div className="mb-1.5 text-[10px] font-semibold text-amber">
+                  ⚠ {stranded.length} ticket{stranded.length !== 1 ? 's' : ''} waiting on this mould
+                </div>
               )}
+              <Button
+                disabled={update.isPending}
+                onClick={() => update.mutate({ id: m.id, input: { ref: m.ref, name: m.name, qty: m.qty, status: 'Active', notes: m.notes } })}
+              >
+                Mark as Active →
+              </Button>
             </div>
-          </Card>
-        );
-      })}
-    </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  return (
+    <>
+      {groups.map(
+        (g) =>
+          g.items.length > 0 && (
+            <div key={g.label} className="mb-4">
+              <div className="mb-2 text-[11px] font-bold text-text2">{g.label} ({g.items.length})</div>
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {g.items.map((x) => <MouldCard key={x.m.id} {...x} />)}
+              </div>
+            </div>
+          ),
+      )}
+    </>
   );
 }
 
-function TicketLine({ t }: { t: Ticket }) {
+function TicketLine({ t, now, onUnassign }: { t: Ticket; now: number; onUnassign?: () => void }) {
+  const cure = cureState(t, now);
   return (
-    <div className="flex items-center justify-between border-b border-border py-1 text-xs last:border-0">
+    <div className="flex items-center justify-between gap-1.5 border-b border-border py-1 text-xs last:border-0">
       <span className="truncate">{t.detail}</span>
-      <span className="ml-2 shrink-0 text-[10px] text-text3">{t.order?.orderNumber ?? `#${t.orderId}`}</span>
+      {cure && (
+        <span className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold ${cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'}`}>
+          {cure.expired ? '✓ Check' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-[10px] text-text3">{t.order?.orderNumber ?? `#${t.orderId}`}</span>
+      {onUnassign && (
+        <button title="Unassign from mould" onClick={onUnassign} className="shrink-0 rounded px-1 text-[11px] text-red hover:bg-red/10">✕</button>
+      )}
     </div>
   );
 }
@@ -350,6 +438,7 @@ function ScheduleTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }
 function UnlinkedTab({ catalogue, moulds }: { catalogue: Catalogue[]; moulds: Mould[] }) {
   const qc = useQueryClient();
   const [busyPart, setBusyPart] = useState<number | null>(null);
+  const [editing, setEditing] = useState<Catalogue | null>(null);
   const groups = catalogue
     .map((c) => ({ c, parts: c.parts.filter((p) => !p.mouldId) }))
     .filter((g) => g.parts.length > 0);
@@ -382,9 +471,14 @@ function UnlinkedTab({ catalogue, moulds }: { catalogue: Catalogue[]; moulds: Mo
         {groups.reduce((n, g) => n + g.parts.length, 0)} part(s) across {groups.length} product(s) have no default mould.
         Linking them here means new tickets created from these products automatically know which mould to use.
       </div>
+      {editing && <CatalogueForm catalogue={editing} onClose={() => setEditing(null)} />}
       <div className="grid gap-3 md:grid-cols-2">
         {groups.map(({ c, parts }) => (
-          <Card key={c.id} title={`${c.name}${c.code ? ` · ${c.code}` : ''}`}>
+          <Card
+            key={c.id}
+            title={`${c.name}${c.code ? ` · ${c.code}` : ''}`}
+            actions={<Button onClick={() => setEditing(c)}>Edit Product →</Button>}
+          >
             <Table head={['Part', 'Drawing', 'Hrs', 'Link mould']}>
               {parts.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">

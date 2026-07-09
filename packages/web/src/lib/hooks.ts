@@ -30,6 +30,7 @@ export interface OrderUpdateInput {
   deadline?: string | null;
   wc?: string | null;
   notes?: string | null;
+  themeImage?: string | null;
   packingChecklist?: PackingItem[];
   packingNotes?: string | null;
 }
@@ -162,6 +163,8 @@ export interface AddTicketInput {
   type?: string;
   detail?: string;
   spec?: string | null;
+  /** Per-part spec overrides for assembly instantiation (import wizard). */
+  partSpecs?: (string | null)[];
   drawing?: string | null;
   qty?: number;
   unitPrice?: number;
@@ -420,6 +423,23 @@ export interface OperativeFormInput {
   defaultHrs?: number | null;
   dayPattern?: number[];
   dayHrs?: Record<string, number>;
+  payRate?: number | null;
+}
+
+export function useDeleteOperative() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.del(`/api/operatives/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['operatives'] }),
+  });
+}
+
+export function useDeleteMould() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.del(`/api/moulds/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['moulds'] }),
+  });
 }
 
 export function useCreateOperative() {

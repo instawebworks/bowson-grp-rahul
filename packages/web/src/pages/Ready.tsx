@@ -308,7 +308,7 @@ export function Ready() {
                     <td className="max-w-42 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                     <td className="max-w-32 truncate px-3 py-2 text-[11px] text-text3">{t.spec ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-[11px]">{t.qty || 1}</td>
-                    <td className="px-3 py-2 text-[11px] font-semibold text-teal">—</td>
+                    <td className="px-3 py-2 text-[11px] font-semibold text-teal">{t.qcRef ?? '—'}</td>
                     <td className="px-3 py-2">
                       <span className="rounded-full border border-border2 bg-surface2 px-2 py-0.5 text-[10px] text-text2">
                         {t.order?.despatch ?? '—'}

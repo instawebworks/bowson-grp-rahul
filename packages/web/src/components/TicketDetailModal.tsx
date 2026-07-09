@@ -4,6 +4,7 @@ import {
   useAssignMould,
   useAssignTicket,
   useAuditFor,
+  useCatalogue,
   useConfirmCure,
   useDeleteTicket,
   useMoulds,
@@ -16,6 +17,7 @@ import { useAuth } from '../lib/auth';
 import { Button, Modal, ProgressBar, StatusPill } from '../components/ui';
 import { TicketStatusSelect } from './TicketStatusSelect';
 import { EditTicketModal } from './EditTicketModal';
+import { SpecModal } from './SpecModal';
 import { cureState, fmtCureMins, fmtElapsed, initials, money } from '../lib/format';
 
 const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
@@ -35,9 +37,18 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const confirmCure = useConfirmCure(orderId);
   const toggleTimer = useToggleTimer();
   const deleteTicket = useDeleteTicket(orderId ?? 0);
+  const { data: catalogue } = useCatalogue();
   const { canManage } = useAuth();
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showSpec, setShowSpec] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  // Matched catalogue template for the spec/parts viewer (ported from kbViewSpec).
+  const specTemplate = useMemo(() => {
+    if (!t) return undefined;
+    return (catalogue ?? []).find((c) => c.name === t.detail || c.parts.some((p) => p.detail === t.detail));
+  }, [catalogue, t]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -66,6 +77,18 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
 
   if (editing && t) {
     return <EditTicketModal ticket={t} parts={t.parts ?? []} onClose={() => setEditing(false)} />;
+  }
+
+  if (showSpec && specTemplate) {
+    return <SpecModal template={specTemplate} onClose={() => setShowSpec(false)} />;
+  }
+
+  if (lightbox) {
+    return (
+      <div className="fixed inset-0 z-[950] flex cursor-zoom-out items-center justify-center bg-black/80 p-6" onClick={() => setLightbox(null)}>
+        <img src={lightbox} alt="Colour theme" className="max-h-full max-w-full rounded-lg" />
+      </div>
+    );
   }
 
   if (confirmDelete && t) {
@@ -122,10 +145,40 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
             <Meta label="Qty" value={String(t.qty)} />
             <Meta label="Labour hrs" value={String(t.hrs)} />
             <Meta label="Resin" value={t.resinType ?? '—'} />
+            <Meta label="Unit £" value={money(t.unitPrice)} />
             <Meta label="Value" value={money(t.netPrice)} />
+            <Meta label="Drawing" value={t.drawing ?? '—'} />
+            <Meta label="QC Ref" value={t.qcRef ?? '—'} />
+            {t.despatchDate ? (
+              <Meta label="Despatch date" value={t.despatchDate} />
+            ) : (
+              <Meta label="Target W/C" value={t.wc ?? '—'} />
+            )}
           </div>
           {t.spec && (
             <div className="rounded-lg bg-surface2 px-3 py-2 text-xs"><span className="text-text3">Spec:</span> {t.spec}</div>
+          )}
+
+          {/* Theme / colour image (ticket, else order) with lightbox */}
+          {(t.themeImage ?? t.order?.themeImage) && (
+            <div
+              className="relative h-20 cursor-zoom-in overflow-hidden rounded-lg"
+              title="🎨 Tap to enlarge"
+              onClick={() => setLightbox(t.themeImage ?? t.order?.themeImage ?? null)}
+            >
+              <img src={t.themeImage ?? t.order?.themeImage ?? ''} alt="Colour theme" className="h-full w-full object-cover" />
+              <span className="absolute bottom-1 right-1.5 rounded bg-black/50 px-1.5 py-0.5 text-[9px] font-bold text-white">🎨 Tap to enlarge</span>
+            </div>
+          )}
+
+          {/* Spec / parts viewer from the matched catalogue template */}
+          {specTemplate && (
+            <button
+              onClick={() => setShowSpec(true)}
+              className="w-full rounded-lg border border-border bg-surface2 px-3 py-2 text-xs font-bold text-text2 hover:bg-surface3"
+            >
+              📐 View Spec / Parts
+            </button>
           )}
 
           {/* Stage / production */}
@@ -216,6 +269,28 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Session log — each clock-in/out (ported from the drawer's session list) */}
+              {sessions.length > 0 && (
+                <div className="mt-2">
+                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-text3">Session log</div>
+                  <div className="max-h-36 space-y-0.5 overflow-y-auto">
+                    {[...sessions].reverse().map((s) => {
+                      const fmtT = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                      const dur = (s.end ? new Date(s.end).getTime() : now) - new Date(s.start).getTime();
+                      return (
+                        <div key={s.id} className="flex gap-2 border-b border-border pb-0.5 text-[10px] last:border-0">
+                          <span className="min-w-16 font-semibold text-text2">{opName(s.operativeId).split(' ')[0]}</span>
+                          <span className="flex-1 text-text3">
+                            {fmtT(s.start)} → {s.end ? fmtT(s.end) : <span className="text-teal">● now</span>}
+                          </span>
+                          <span className="font-semibold tabular-nums text-text2">{fmtElapsed(dur)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </Section>

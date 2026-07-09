@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useCreateMould, useUpdateMould, type MouldFormInput } from '../lib/hooks';
+import { useCreateMould, useDeleteMould, useUpdateMould, type MouldFormInput } from '../lib/hooks';
 import type { Mould } from '../lib/types';
 import { Button, Field, Modal, inputClass } from './ui';
 
@@ -7,6 +7,7 @@ export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => vo
   const isEdit = !!mould;
   const create = useCreateMould();
   const update = useUpdateMould();
+  const del = useDeleteMould();
   const pending = create.isPending || update.isPending;
 
   const [form, setForm] = useState<MouldFormInput>({
@@ -41,6 +42,19 @@ export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => vo
       onClose={onClose}
       footer={
         <>
+          {isEdit && (
+            <Button
+              variant="danger"
+              disabled={del.isPending}
+              onClick={async () => {
+                if (!window.confirm(`Delete mould ${mould.ref}? Tickets keep their history; the mould is removed from planning.`)) return;
+                await del.mutateAsync(mould.id);
+                onClose();
+              }}
+            >
+              Delete
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={submit} disabled={pending}>
             {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Create mould'}

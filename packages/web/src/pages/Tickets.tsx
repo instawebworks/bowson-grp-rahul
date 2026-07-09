@@ -84,7 +84,8 @@ export function Tickets() {
 
   const all = useMemo(() => data ?? [], [data]);
 
-  // Each top-level ticket followed by its PART children.
+  // Each top-level ticket followed by its PART children, sorted by order
+  // deadline (ported from renderTickets' deadline sort).
   const ordered = useMemo(() => {
     const partsByComp = new Map<number, Ticket[]>();
     for (const t of all) {
@@ -94,9 +95,11 @@ export function Tickets() {
         partsByComp.set(t.compParentId, arr);
       }
     }
+    const tops = all
+      .filter((t) => t.compParentId == null)
+      .sort((a, b) => (a.order?.deadline ?? '9999').localeCompare(b.order?.deadline ?? '9999'));
     const out: { ticket: Ticket; child: boolean }[] = [];
-    for (const t of all) {
-      if (t.compParentId != null) continue;
+    for (const t of tops) {
       out.push({ ticket: t, child: false });
       for (const p of partsByComp.get(t.id) ?? []) out.push({ ticket: p, child: true });
     }
@@ -185,6 +188,7 @@ export function Tickets() {
       setGate({ kind: 'qcref', ids: eligible.map((t) => t.id), needsQC, target: bulkStage });
       return;
     }
+    if (!window.confirm(`Move ${eligible.length} ticket${eligible.length !== 1 ? 's' : ''} to "${bulkStage}"?`)) return;
     void runBulkAdvance(eligible.map((t) => t.id), [], '', bulkStage);
   }
 

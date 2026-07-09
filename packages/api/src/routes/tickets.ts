@@ -145,6 +145,12 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     };
     unwrap(await db.from('tickets').update(update).eq('id', id).select('id'));
 
+    // Stage moves clock everyone off (ported from _doMoveCore).
+    unwrap(
+      await db.from('time_sessions').update({ end: new Date().toISOString() })
+        .eq('ticketId', id).is('end', null).select('id'),
+    );
+
     // Audit trail
     unwrap(
       await db.from('audit_log').insert({
@@ -274,15 +280,28 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
   });
 
-  // Confirm a cure is done — clears the timer and advances to the target stage (if set)
+  // Confirm a cure is done — clears the timer and advances to the target stage
+  // (if set). With { advance: false } (Touch Up) the timer is wiped without
+  // moving, so the operative can re-work and re-cure.
   app.post('/:id/cure/clear', async (req, reply) => {
     const id = parseId((req.params as { id: string }).id, reply);
     if (id === PARSE_FAILED) return;
+    const body = parse(z.object({ advance: z.boolean().default(true) }), req.body ?? {}, reply);
+    if (body === PARSE_FAILED) return;
     const t = unwrap(
       await db.from('tickets').select('status, cureTargetStage, orderId, compParentId')
         .eq('id', id).is('deletedAt', null).maybeSingle(),
     ) as ({ status: string; cureTargetStage: string | null } & TicketRef) | null;
     if (!t) return reply.notFound('Ticket not found');
+
+    if (!body.advance) {
+      unwrap(
+        await db.from('tickets').update({
+          cureTargetStage: null, cureStart: null, cureMins: null, cureCleared: false,
+        }).eq('id', id).select('id'),
+      );
+      return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
+    }
 
     const update: Record<string, unknown> = { cureCleared: true };
     if (t.cureTargetStage) {

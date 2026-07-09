@@ -29,6 +29,10 @@ interface ParsedSlide {
   singlePiece: boolean;
   partCount: number;
   spec: string;
+  /** Template part names (assemblies) and per-part spec overrides —
+   * blank entries inherit the slide colour (prototype part_specs). */
+  partNames: string[];
+  partSpecs: string[];
   qty: number;
   unitPrice: string;
   ticketsDesc: string;
@@ -162,6 +166,7 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
       warnings.push(`Row ${rowNo}: slide code "${code}" not in catalogue.`);
     }
 
+    const partNames = cat && !isSingle ? cat.parts.map((pt) => pt.detail) : [];
     tickets.push({
       orderNumber: orderNum,
       slideCode: code,
@@ -170,6 +175,8 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
       singlePiece: isSingle,
       partCount: cat ? cat.parts.length : 0,
       spec,
+      partNames,
+      partSpecs: partNames.map(() => ''),
       qty,
       unitPrice: price,
       ticketsDesc,
@@ -314,6 +321,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                     colour: s.spec || undefined,
                     spec: s.spec || null,
                     resinType: o.resin,
+                    ...(s.partSpecs.some(Boolean) ? { partSpecs: s.partSpecs.map((ps) => ps || null) } : {}),
                     ...(s.unitPrice !== '' ? { unitPrice: Number(s.unitPrice) } : {}),
                   }
                 : {
@@ -508,7 +516,34 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                         </td>
                         <td className="px-3 py-1.5 text-[10px] text-text3">{t.singlePiece ? 'Single' : `Assembly — ${t.partCount} parts`}</td>
                       </tr>
-                    ))}
+                    )).flatMap((row, ti) => [
+                      row,
+                      ...parsed.tickets[ti]!.partNames.map((pn, pj) => (
+                        <tr key={`${ti}-p${pj}`} className="border-t border-border bg-surface2/50">
+                          <td className="px-3 py-1" />
+                          <td className="px-3 py-1 text-[10px] text-text3">└ {pn}</td>
+                          <td className="px-3 py-1" />
+                          <td className="px-3 py-1">
+                            <input
+                              value={parsed.tickets[ti]!.partSpecs[pj] ?? ''}
+                              placeholder="inherit slide colour"
+                              onChange={(e) =>
+                                setParsed((p) => ({
+                                  ...p,
+                                  tickets: p.tickets.map((x, j) =>
+                                    j === ti
+                                      ? { ...x, partSpecs: x.partSpecs.map((ps, k) => (k === pj ? e.target.value : ps)) }
+                                      : x,
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded border border-border2 px-2 py-0.5 text-[11px] outline-none focus:border-teal"
+                            />
+                          </td>
+                          <td className="px-3 py-1" />
+                        </tr>
+                      )),
+                    ])}
                   </tbody>
                 </table>
               </div>

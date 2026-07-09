@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   PointerSensor,
@@ -15,14 +16,16 @@ import {
   useBoardRealtime,
   useBoardStatusChange,
   useBoardTickets,
+  useCatalogue,
   useConfirmCure,
   useOperatives,
   useSetCure,
   useToggleTimer,
 } from '../lib/hooks';
+import { apiClient } from '../lib/api';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
-import { cureState, fmtCureMins, fmtElapsed, initials } from '../lib/format';
+import { cureState, daysToDeadline, fmtCureMins, fmtElapsed, initials } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
 
 type View = 'stage' | 'ops';
@@ -96,10 +99,35 @@ export function Board() {
   const [bulkStage, setBulkStage] = useState<string | null>(null);
   const [bulkSel, setBulkSel] = useState<Set<number>>(new Set());
 
-  // Right-click context menu / cure prompt / cure-done modal
+  // Right-click context menu / cure prompt / cure modal / drag gates / lightbox
   const [ctx, setCtx] = useState<{ x: number; y: number; ticketId: number } | null>(null);
   const [curePrompt, setCurePrompt] = useState<{ ticketId: number; targetStage: string; move: boolean } | null>(null);
-  const [cureDone, setCureDone] = useState<number | null>(null);
+  const [cureModal, setCureModal] = useState<{ ticketId: number; expired: boolean } | null>(null);
+  const [dragGate, setDragGate] = useState<
+    | { kind: 'qcref'; ticketId: number; targetStage: string }
+    | { kind: 'warn'; ticketId: number; targetStage: string; fromStage: string }
+    | null
+  >(null);
+  const [qcRefValue, setQcRefValue] = useState('');
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const { data: catalogue } = useCatalogue();
+  const qc = useQueryClient();
+  const refreshBoard = () => {
+    qc.invalidateQueries({ queryKey: ['board-tickets'] });
+    qc.invalidateQueries({ queryKey: ['tickets'] });
+    qc.invalidateQueries({ queryKey: ['ticket'] });
+  };
+
+  /** Catalogue default cure minutes for a ticket entering a cure stage
+   * (ported from openCureTimerPrompt's template lookup). */
+  function cureDefaultFor(ticketId: number, stage: string): number {
+    const t = (data ?? []).find((x) => x.id === ticketId);
+    const tpl = t
+      ? (catalogue ?? []).find((c) => c.name === t.detail || c.parts.some((p) => p.detail === t.detail))
+      : undefined;
+    if (stage === '4. Gel Coat') return tpl?.gelCureMins || 60;
+    return tpl?.lamCureMins || 120;
+  }
 
   // 1-second clock so running timers tick live.
   const [now, setNow] = useState(() => Date.now());
@@ -129,6 +157,8 @@ export function Board() {
     };
   }, [data]);
 
+  const WARN_STAGES = ['1. Spec Required', '2. Materials Required'];
+
   function onDragEnd(e: DragEndEvent) {
     const ticketId = Number(e.active.id);
     const over = e.over?.id;
@@ -138,17 +168,47 @@ export function Board() {
       const status = overId.slice('stage:'.length);
       const t = live.find((x) => x.id === ticketId);
       if (!t || t.status === status) return;
-      // Dropping into a cure stage prompts for a cure timer (ported from kbDoMove).
-      if (CURE_STAGES.includes(status)) {
-        setCurePrompt({ ticketId, targetStage: status, move: true });
+      // QC-ref gate: QC Check → Packing without a reference (ported from kbDrop).
+      if (t.status === '8. QC Check' && status === '9. Packing' && !t.qcRef) {
+        setQcRefValue('');
+        setDragGate({ kind: 'qcref', ticketId, targetStage: status });
         return;
       }
-      changeStatus.mutate({ ticketId, status });
+      applyMove(t, status);
     } else if (overId.startsWith('op:')) {
       const rest = overId.slice('op:'.length);
       const ids = rest === 'unassigned' ? [] : [Number(rest)];
       assign.mutate({ ticketId, operativeIds: ids });
     }
+  }
+
+  /** After the QC gate: confirm when leaving Spec/Materials (ported from kbApplyMove). */
+  function applyMove(t: Ticket, targetStage: string) {
+    if (WARN_STAGES.includes(t.status) && !WARN_STAGES.includes(targetStage)) {
+      setDragGate({ kind: 'warn', ticketId: t.id, targetStage, fromStage: t.status });
+      return;
+    }
+    doMove(t.id, targetStage);
+  }
+
+  /** Final move: cure prompt when entering a cure stage, else straight move. */
+  function doMove(ticketId: number, targetStage: string) {
+    setDragGate(null);
+    if (CURE_STAGES.includes(targetStage)) {
+      setCurePrompt({ ticketId, targetStage, move: true });
+      return;
+    }
+    changeStatus.mutate({ ticketId, status: targetStage });
+  }
+
+  /** QC-ref gate confirmed: save the ref, then continue the move chain. */
+  async function confirmDragQcRef() {
+    if (dragGate?.kind !== 'qcref' || !qcRefValue.trim()) return;
+    const { ticketId, targetStage } = dragGate;
+    await apiClient.patch(`/api/tickets/${ticketId}`, { qcRef: qcRefValue.trim() });
+    const t = live.find((x) => x.id === ticketId);
+    setDragGate(null);
+    if (t) applyMove(t, targetStage);
   }
 
   /** Cure prompt confirmed: (optionally) move the card, then start the timer
@@ -211,9 +271,11 @@ export function Board() {
       e.stopPropagation();
       setCtx({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 320), ticketId: id });
     },
-    onCureClick: (id: number, expired: boolean) => {
-      if (expired) setCureDone(id);
-    },
+    onCureClick: (id: number, expired: boolean) => setCureModal({ ticketId: id, expired }),
+    onImage: (src: string) => setLightbox(src),
+    parentFor: (compParentId: number) => (data ?? []).find((x) => x.id === compParentId),
+    onTimerToggle: (ticketId: number, operativeId: number, action: 'start' | 'stop') =>
+      toggleTimer.mutate({ ticketId, operativeId, action }),
     paletteFor,
   };
 
@@ -308,6 +370,12 @@ export function Board() {
           <div className="ml-auto flex items-center gap-2">
             <span className="text-[11px] text-[#888]">{bulkSel.size} selected</span>
             <button
+              onClick={() => setBulkSel(new Set(live.map((t) => t.id)))}
+              className="rounded-md border border-[#444] bg-[#333] px-3 py-1.5 text-[11px] text-[#ccc] hover:text-white"
+            >
+              Select all
+            </button>
+            <button
               onClick={confirmBulk}
               disabled={(view === 'stage' ? !bulkStage : bulkOp == null) || bulkSel.size === 0}
               className="rounded-md bg-teal px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
@@ -327,18 +395,32 @@ export function Board() {
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           {view === 'stage'
             ? KB_COLS.map((col) => (
-                <StageColumn key={col.key} col={col} tickets={live.filter((t) => t.status === col.key)} scrollLock={scrollLock} cardProps={cardProps} />
+                <StageColumn
+                  key={col.key}
+                  col={col}
+                  tickets={live
+                    .filter((t) => t.status === col.key)
+                    .sort((a, b) => (a.order?.deadline ?? '9999').localeCompare(b.order?.deadline ?? '9999'))}
+                  scrollLock={scrollLock}
+                  cardProps={cardProps}
+                />
               ))
             : [{ id: 'op:unassigned', name: 'Unassigned', opId: null as number | null }, ...(operatives ?? []).map((o) => ({ id: `op:${o.id}`, name: o.name, opId: o.id }))].map((col) => (
                 <OpColumn
                   key={col.id}
                   id={col.id}
                   name={col.name}
-                  tickets={live.filter((t) => (t.assignments?.[0]?.operativeId ?? null) === col.opId)}
+                  // A ticket appears under EVERY assigned operative (prototype parity).
+                  tickets={live.filter((t) =>
+                    col.opId == null
+                      ? (t.assignments ?? []).length === 0
+                      : (t.assignments ?? []).some((a) => a.operativeId === col.opId),
+                  )}
                   scrollLock={scrollLock}
                   cardProps={cardProps}
                   opId={col.opId}
                   onTimer={toggleTimer.mutate}
+                  now={now}
                 />
               ))}
         </DndContext>
@@ -371,40 +453,139 @@ export function Board() {
       {curePrompt && (
         <CurePromptModal
           stage={curePrompt.targetStage}
+          defaultMins={cureDefaultFor(curePrompt.ticketId, curePrompt.targetStage)}
           onConfirm={startCure}
           onCancel={() => setCurePrompt(null)}
         />
       )}
 
-      {/* Cure expired: confirm complete or needs more time */}
-      {cureDone != null && (() => {
-        const t = live.find((x) => x.id === cureDone);
+      {/* QC-ref gate on drag QC Check → Packing (ported from kbDrop) */}
+      {dragGate?.kind === 'qcref' && (
+        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setDragGate(null)}>
+          <div className="w-[340px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1.5 text-[13px] font-bold text-white">QC Reference Required</div>
+            <p className="mb-3 text-[11px] text-[#aaa]">Enter the QC reference before moving to Packing.</p>
+            <input
+              value={qcRefValue}
+              autoFocus
+              placeholder="e.g. QC-2025-047"
+              onChange={(e) => setQcRefValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void confirmDragQcRef()}
+              className="mb-3 w-full rounded-md border border-[#444] bg-[#242220] px-2.5 py-2 text-xs text-white outline-none focus:border-teal"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDragGate(null)} className="rounded-md border border-[#444] bg-[#333] px-3 py-1.5 text-xs text-[#ccc]">Cancel</button>
+              <button
+                onClick={() => void confirmDragQcRef()}
+                disabled={!qcRefValue.trim()}
+                className="rounded-md bg-teal px-4 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+              >
+                Confirm &amp; Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm leaving Spec / Materials Required (ported from kbApplyMove) */}
+      {dragGate?.kind === 'warn' && (
+        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setDragGate(null)}>
+          <div className="w-[360px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1.5 text-[13px] font-bold text-white">
+              Moving from {dragGate.fromStage.replace(/^\d+\.\s*/, '')}
+            </div>
+            <p className="mb-1.5 text-[11px] text-[#aaa]">This ticket is at <strong className="text-white">{dragGate.fromStage}</strong>.</p>
+            <p className="mb-3 text-[11px] text-[#aaa]">
+              Please confirm that the specification has been reviewed and all materials are available before advancing to production.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDragGate(null)} className="rounded-md border border-[#444] bg-[#333] px-3 py-1.5 text-xs text-[#ccc]">Cancel</button>
+              <button
+                onClick={() => doMove(dragGate.ticketId, dragGate.targetStage)}
+                className="rounded-md bg-teal px-4 py-1.5 text-xs font-bold text-white"
+              >
+                Yes — advance to production
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cure modal — active (progress + Ready now) or expired (Confirm / Touch Up / More time) */}
+      {cureModal && (() => {
+        const t = live.find((x) => x.id === cureModal.ticketId);
         if (!t) return null;
+        const cure = cureState(t, now);
         return (
-          <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setCureDone(null)}>
-            <div className="w-[340px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
-              <div className="mb-1.5 text-[13px] font-bold text-white">✓ Cure complete — #{t.tn ?? 'TBC'}</div>
-              <p className="mb-3 text-[11px] text-[#aaa]">
-                Inspect the part. Confirm to advance{t.cureTargetStage ? ` to ${t.cureTargetStage}` : ''}, or restart the timer if it needs more time.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { confirmCure.mutate({ ticketId: t.id }); setCureDone(null); }}
-                  className="flex-1 rounded-md bg-teal px-3 py-2 text-[11px] font-bold text-white"
-                >
-                  ✓ Confirm cure
-                </button>
-                <button
-                  onClick={() => { setCureDone(null); setCurePrompt({ ticketId: t.id, targetStage: t.status, move: false }); }}
-                  className="flex-1 rounded-md border border-[#666] bg-[#333] px-3 py-2 text-[11px] font-semibold text-[#fbbf24]"
-                >
-                  ⏱ Needs more time
-                </button>
-              </div>
+          <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setCureModal(null)}>
+            <div className="w-[360px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
+              {cure && !cure.expired ? (
+                <>
+                  <div className="mb-1.5 text-[13px] font-bold text-white">⏱ Curing — #{t.tn ?? 'TBC'}</div>
+                  <p className="mb-2 text-[11px] text-[#aaa]">{fmtCureMins(cure.remainingMin)} remaining of {fmtCureMins(t.cureMins ?? 0)}.</p>
+                  <div className="mb-3 h-1.5 rounded-full bg-[#333]">
+                    <div
+                      className="h-full rounded-full bg-[#fbbf24]"
+                      style={{ width: `${Math.min(100, Math.round(((t.cureMins ?? 0) - cure.remainingMin) / Math.max(1, t.cureMins ?? 1) * 100))}%` }}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { confirmCure.mutate({ ticketId: t.id }); setCureModal(null); }}
+                      className="flex-1 rounded-md bg-teal px-3 py-2 text-[11px] font-bold text-white"
+                    >
+                      ✓ Ready now
+                    </button>
+                    <button onClick={() => setCureModal(null)} className="flex-1 rounded-md border border-[#444] bg-[#333] px-3 py-2 text-[11px] text-[#ccc]">
+                      Close
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-1.5 text-[13px] font-bold text-white">✓ Cure complete — #{t.tn ?? 'TBC'}</div>
+                  <p className="mb-3 text-[11px] text-[#aaa]">
+                    Inspect the part. Confirm to advance{t.cureTargetStage ? ` to ${t.cureTargetStage}` : ''}, touch up if it needs
+                    more material, or restart the timer.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setCureModal(null); setCurePrompt({ ticketId: t.id, targetStage: t.status, move: false }); }}
+                      className="flex-1 rounded-md border border-[#666] bg-[#333] px-2 py-2 text-[10px] font-semibold text-[#fbbf24]"
+                    >
+                      ⏱ More Time
+                    </button>
+                    <button
+                      onClick={() => {
+                        void apiClient.post(`/api/tickets/${t.id}/cure/clear`, { advance: false }).then(() => {
+                          setCureModal(null);
+                          refreshBoard();
+                        });
+                      }}
+                      className="flex-1 rounded-md border border-[#3b82f6]/40 bg-[#3b82f6]/10 px-2 py-2 text-[10px] font-bold text-[#3b82f6]"
+                    >
+                      🔧 Touch Up
+                    </button>
+                    <button
+                      onClick={() => { confirmCure.mutate({ ticketId: t.id }); setCureModal(null); }}
+                      className="flex-1 rounded-md bg-teal px-2 py-2 text-[10px] font-bold text-white"
+                    >
+                      ✓ Ready — Advance
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );
       })()}
+
+      {/* Theme-image lightbox (ported from viewThemeImage) */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[950] flex cursor-zoom-out items-center justify-center bg-black/80 p-6" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="Colour theme" className="max-h-full max-w-full rounded-lg" />
+        </div>
+      )}
 
       {askUnlock && (
         <ManagerPinGate
@@ -427,6 +608,9 @@ interface CardProps {
   onOpen: (id: number) => void;
   onContext: (e: React.MouseEvent, id: number) => void;
   onCureClick: (id: number, expired: boolean) => void;
+  onImage: (src: string) => void;
+  parentFor: (compParentId: number) => Ticket | undefined;
+  onTimerToggle: (ticketId: number, operativeId: number, action: 'start' | 'stop') => void;
   paletteFor: (orderId: number) => (typeof KB_PALETTES)[number];
 }
 
@@ -476,6 +660,7 @@ function OpColumn({
   cardProps,
   opId,
   onTimer,
+  now,
 }: {
   id: string;
   name: string;
@@ -484,21 +669,50 @@ function OpColumn({
   cardProps: CardProps;
   opId: number | null;
   onTimer: (v: { ticketId: number; operativeId: number; action: 'start' | 'stop' }) => void;
+  now: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  // Live total across this operative's running sessions (prototype header ● live).
+  const liveMs =
+    opId == null
+      ? 0
+      : tickets.reduce((sum, t) => {
+          const open = (t.time ?? []).find((s) => s.operativeId === opId && s.end == null);
+          return sum + (open ? now - new Date(open.start).getTime() : 0);
+        }, 0);
+  // Cards grouped under GRP-stage sub-headers (ported from renderKanbanOps).
+  const stages = (GRP_STAGES as readonly string[]).filter((s) => tickets.some((t) => t.status === s));
+  const other = tickets.filter((t) => !(GRP_STAGES as readonly string[]).includes(t.status));
   return (
     <div className="mx-[5px] flex h-full w-[188px] shrink-0 flex-col overflow-hidden rounded-lg bg-[#242220]">
       <div className="flex flex-shrink-0 items-center justify-between border-b-2 border-[#3a3836] px-3 py-2 text-[9px] font-bold uppercase tracking-wide text-[#ccc]">
         <span className="truncate">{name}</span>
-        <span className="rounded-full bg-white/10 px-1.5 py-px text-[11px] text-white/60">{tickets.length}</span>
+        <span className="flex items-center gap-1.5">
+          {liveMs > 0 && <span className="text-[9px] normal-case text-[#4ade80]">● {fmtElapsed(liveMs)}</span>}
+          <span className="rounded-full bg-white/10 px-1.5 py-px text-[11px] text-white/60">{tickets.length}</span>
+        </span>
       </div>
       <div
         ref={setNodeRef}
-        className={`flex-1 space-y-1.5 p-1.5 ${isOver ? 'bg-[#4ade80]/5' : ''}`}
+        className={`flex-1 p-1.5 ${isOver ? 'bg-[#4ade80]/5' : ''}`}
         style={{ overflowY: scrollLock ? 'hidden' : 'auto' }}
       >
-        {tickets.map((t) => (
-          <KbCard key={t.id} ticket={t} {...cardProps} opId={opId ?? undefined} onTimer={onTimer} />
+        {stages.map((s) => (
+          <div key={s} className="mb-1.5">
+            <div className="mb-1 px-1 text-[8px] font-bold uppercase tracking-wide text-[#666]">
+              {s.replace(/^\d+\.\s*/, '')} ({tickets.filter((t) => t.status === s).length})
+            </div>
+            <div className="space-y-1.5">
+              {tickets.filter((t) => t.status === s).map((t) => (
+                <KbCard key={t.id} ticket={t} {...cardProps} opId={opId ?? undefined} onTimer={onTimer} showStage />
+              ))}
+            </div>
+          </div>
+        ))}
+        {other.map((t) => (
+          <div key={t.id} className="mb-1.5">
+            <KbCard ticket={t} {...cardProps} opId={opId ?? undefined} onTimer={onTimer} showStage />
+          </div>
         ))}
         {tickets.length === 0 && <div className="my-1 h-14 rounded border border-dashed border-[#333]" />}
       </div>
@@ -516,25 +730,45 @@ function KbCard({
   onOpen,
   onContext,
   onCureClick,
+  onImage,
+  parentFor,
+  onTimerToggle,
   paletteFor,
   opId,
   onTimer,
+  showStage,
 }: CardProps & {
   ticket: Ticket;
   opId?: number;
   onTimer?: (v: { ticketId: number; operativeId: number; action: 'start' | 'stop' }) => void;
+  showStage?: boolean;
 }) {
   const draggable = !bulkMode;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: ticket.id, disabled: !draggable });
   const border = TYPE_BORDER[ticket.type] ?? '#5c574f';
   const pal = paletteFor(ticket.orderId);
-  const names = (ticket.assignments ?? []).map((a) => a.operative?.name).filter(Boolean) as string[];
   const selected = bulkSel.has(ticket.id);
 
   const openSession =
     opId != null ? (ticket.time ?? []).find((s) => s.operativeId === opId && s.end == null) : undefined;
   const elapsed = openSession ? now - new Date(openSession.start).getTime() : 0;
   const cure = cureState(ticket, now);
+
+  const isM2 = ticket.resinType === 'M2' || ticket.order?.resinType === 'M2';
+  const parent = ticket.compParentId != null ? parentFor(ticket.compParentId) : undefined;
+  const themeImage = ticket.themeImage ?? ticket.order?.themeImage ?? null;
+  const deadline = ticket.order?.deadline?.slice(0, 10) ?? null;
+  const overdue =
+    deadline != null && (daysToDeadline(deadline) ?? 0) < 0 &&
+    !['Despatched', 'Completed', 'Cancelled'].includes(ticket.order?.status ?? '');
+  // Total time logged on this ticket (all operatives), with LIVE when any session is open.
+  const sessions = ticket.time ?? [];
+  const totalMs = sessions.reduce(
+    (sum, s) => sum + ((s.end ? new Date(s.end).getTime() : now) - new Date(s.start).getTime()),
+    0,
+  );
+  const anyLive = sessions.some((s) => s.end == null);
+  const runningFor = (operativeId: number) => sessions.some((s) => s.operativeId === operativeId && s.end == null);
 
   const style = {
     background: pal.bg,
@@ -555,40 +789,95 @@ function KbCard({
       {...(draggable ? listeners : {})}
       onClick={onClick}
       onContextMenu={(e) => onContext(e, ticket.id)}
-      className={`rounded-md p-2.5 transition hover:brightness-105 ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${
+      className={`overflow-hidden rounded-md transition hover:brightness-105 ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${
         isDragging ? 'opacity-40' : ''
       } ${selected ? 'ring-2 ring-teal' : ''}`}
     >
-      <div className="flex items-baseline justify-between">
-        <span className="text-base font-extrabold leading-none" style={{ color: pal.header }}>#{ticket.tn ?? '—'}</span>
-        <span className="rounded px-1.5 py-0.5 text-[9px] font-bold text-white" style={{ background: border }}>
-          {ticket.type}
-        </span>
-      </div>
-      <div className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug" style={{ color: pal.text }}>{ticket.detail}</div>
-
-      {cure && (
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); onCureClick(ticket.id, cure.expired); }}
-          className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-semibold ${cure.expired ? 'cursor-pointer bg-red/20 text-[#dc2626]' : 'bg-amber/20 text-[#a86010]'}`}
-          title={cure.expired ? 'Cure done — click to confirm or extend' : undefined}
-        >
-          {cure.expired ? '✓ cure done' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
+      {isM2 && (
+        <div className="bg-[#7a4800] px-2 py-0.5 text-center text-[9px] font-bold tracking-wide text-white">
+          ⚠ IMPORTANT — M2 RESIN
         </div>
       )}
-
-      <div className="mt-2 flex items-center justify-between border-t pt-1.5" style={{ borderColor: `${pal.border}33` }}>
-        <span className="text-[10px] font-semibold" style={{ color: pal.header }}>{ticket.order?.orderNumber ?? `#${ticket.orderId}`}</span>
-        <div className="flex items-center gap-1">
-          {names.length > 0 ? (
-            names.slice(0, 3).map((n) => (
-              <span key={n} title={n} className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0c6b5033] text-[8px] font-bold text-[#4ade80]">
-                {initials(n)}
+      <div className="p-2.5">
+        <div className="flex items-baseline justify-between">
+          <span className="text-base font-extrabold leading-none" style={{ color: pal.header }}>#{ticket.tn ?? '—'}</span>
+          <span className="flex items-center gap-1">
+            {showStage && (
+              <span className="rounded px-1 py-0.5 text-[8px] font-bold" style={{ background: `${pal.border}22`, color: pal.header }}>
+                {ticket.status.replace(/^\d+\.\s*/, '')}
               </span>
-            ))
+            )}
+            <span className="rounded px-1.5 py-0.5 text-[9px] font-bold text-white" style={{ background: border }}>
+              {ticket.type}
+            </span>
+          </span>
+        </div>
+        <div className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-snug" style={{ color: pal.text }}>{ticket.detail}</div>
+        {ticket.spec && (
+          <div className="mt-0.5 truncate text-[10px] opacity-70" style={{ color: pal.text }}>{ticket.spec}</div>
+        )}
+        {parent && (
+          <div className="mt-0.5 truncate text-[9px] opacity-60" style={{ color: pal.text }}>
+            ↳ #{parent.tn ?? 'TBC'} {parent.detail.slice(0, 30)}
+          </div>
+        )}
+        {themeImage && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onImage(themeImage); }}
+            className="mt-1.5 h-10 cursor-zoom-in overflow-hidden rounded"
+            title="🎨 Tap to enlarge"
+          >
+            <img src={themeImage} alt="Colour" className="h-full w-full object-cover" />
+          </div>
+        )}
+
+        {/* Assignee chips — clickable timer toggles (ported from card chips) */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {(ticket.assignments ?? []).length > 0 ? (
+            (ticket.assignments ?? []).slice(0, 4).map((a) => {
+              const running = runningFor(a.operativeId);
+              return (
+                <button
+                  key={a.operativeId}
+                  title={`${a.operative?.name ?? ''} — ${running ? 'stop' : 'start'} timer`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTimerToggle(ticket.id, a.operativeId, running ? 'stop' : 'start');
+                  }}
+                  className={`flex items-center gap-0.5 rounded-full px-1.5 py-px text-[8px] font-bold ${
+                    running ? 'bg-[#0c6b50] text-white' : 'bg-[#0c6b5033] text-[#0c6b50]'
+                  }`}
+                >
+                  {running ? '⏸' : '▶'} {initials(a.operative?.name ?? '?')}
+                </button>
+              );
+            })
           ) : (
-            <span className="rounded-full bg-[#3a3836] px-1.5 py-px text-[9px] text-[#666]">unassigned</span>
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onContext(e, ticket.id); }}
+              className="rounded-full bg-black/15 px-1.5 py-px text-[9px] opacity-60"
+              style={{ color: pal.text }}
+            >
+              unassigned
+            </button>
+          )}
+          {cure && (
+            <span
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onCureClick(ticket.id, cure.expired); }}
+              className={`cursor-pointer rounded px-1.5 py-0.5 text-[9px] font-semibold ${cure.expired ? 'bg-red/20 text-[#dc2626]' : 'bg-amber/20 text-[#a86010]'}`}
+              title={cure.expired ? 'Cure done — confirm / touch up / extend' : 'Curing — click for progress'}
+            >
+              {cure.expired ? '✓ cure done' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
+            </span>
+          )}
+          {totalMs > 0 && (
+            <span className="ml-auto rounded bg-black/10 px-1.5 py-0.5 text-[8px] font-bold" style={{ color: pal.header }}>
+              {fmtElapsed(totalMs)}{anyLive && <span className="ml-0.5 text-[#0c6b50]">● LIVE</span>}
+            </span>
           )}
           {opId != null && onTimer && (
             <button
@@ -597,11 +886,24 @@ function KbCard({
                 e.stopPropagation();
                 onTimer({ ticketId: ticket.id, operativeId: opId, action: openSession ? 'stop' : 'start' });
               }}
-              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${openSession ? 'bg-[#0c6b5033] text-[#4ade80]' : 'bg-[#333] text-[#aaa] hover:text-white'}`}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${openSession ? 'bg-[#0c6b50] text-white' : 'bg-black/15 text-[#555] hover:text-black'}`}
             >
               {openSession ? `● ${fmtElapsed(elapsed)}` : '▶'}
             </button>
           )}
+        </div>
+
+        {/* Footer: order # + deadline / OVERDUE, then progress bar (ported) */}
+        <div className="mt-2 border-t pt-1.5" style={{ borderColor: `${pal.border}33` }}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold" style={{ color: pal.header }}>{ticket.order?.orderNumber ?? `#${ticket.orderId}`}</span>
+            <span className={`text-[9px] font-bold ${overdue ? 'text-[#dc2626]' : ''}`} style={overdue ? undefined : { color: pal.text, opacity: 0.6 }}>
+              {overdue ? '⚠ OVERDUE' : deadline ? `Due: ${deadline}` : ''}
+            </span>
+          </div>
+          <div className="mt-1 h-[3px] rounded-full bg-black/10">
+            <div className="h-full rounded-full" style={{ width: `${ticket.pct}%`, background: pal.border }} />
+          </div>
         </div>
       </div>
     </div>
@@ -712,14 +1014,16 @@ function KbContextMenu({
 // ─── Cure timer prompt on drop into a cure stage (ported) ────────────────────
 function CurePromptModal({
   stage,
+  defaultMins,
   onConfirm,
   onCancel,
 }: {
   stage: string;
+  /** Catalogue per-product default (gel/lam cure mins), else the stage default. */
+  defaultMins: number;
   onConfirm: (mins: number) => void;
   onCancel: () => void;
 }) {
-  const defaultMins = stage === '4. Gel Coat' ? 60 : 120;
   const [mins, setMins] = useState(defaultMins);
   const [custom, setCustom] = useState(false);
   const stageName = stage.replace(/^\d+\.\s*/, '');

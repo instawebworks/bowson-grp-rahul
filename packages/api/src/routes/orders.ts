@@ -29,6 +29,9 @@ const addTicketSchema = z.object({
   resinType: resinTypeSchema.nullish(),
   themeImage: z.string().nullish(), // per-slide colour reference image
   status: z.string().optional(), // initial stage for a manual ticket
+  /** Per-part spec overrides (aligned to the template's part order); blank
+   * entries inherit the slide colour (import wizard step 4). */
+  partSpecs: z.array(z.string().nullable()).optional(),
 });
 
 interface CatPart {
@@ -203,9 +206,9 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
             hrs: tpl.assemblyHrs ?? 0, qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
           }).select('id').single(),
         ) as { id: number };
-        const partRows = parts.map((p) => ({
+        const partRows = parts.map((p, i) => ({
           orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: p.detail,
-          spec: spec ?? p.spec ?? null, drawing: p.drawing ?? null, status: '1. Spec Required',
+          spec: body.partSpecs?.[i] || spec || p.spec || null, drawing: p.drawing ?? null, status: '1. Spec Required',
           pct: 0, wc: order.wc, hrs: p.hrs ?? 0, qty: 1, unitPrice: p.price ?? 0,
           netPrice: p.price ?? 0, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
         }));

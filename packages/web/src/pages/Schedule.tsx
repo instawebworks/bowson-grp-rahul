@@ -9,6 +9,7 @@ import {
   mondayOf,
   nextWeeks,
   opDayDefault,
+  opWeekTotal,
   todayDayIdx,
   wcForDeadline,
   wcKey,
@@ -298,6 +299,11 @@ function TicketMini({ t, onOpen }: { t: Ticket; onOpen: () => void }) {
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-text3">{t.order?.orderNumber ?? '—'}</span>
         <StatusPill status={t.status} />
+        {(t.assignments ?? []).length > 0 && (
+          <span className="ml-auto truncate text-[9px] font-semibold text-teal">
+            {(t.assignments ?? []).map((a) => a.operative?.name.split(' ')[0]).filter(Boolean).join(', ')}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -431,6 +437,68 @@ function History({ ops }: { ops: Operative[] }) {
         <Metric label="Weekly capacity" value={data ? `${data.weeklyCapacity} h` : '…'} sub="standard week" />
         <Metric label={`Committed (next ${PLANNER_WEEKS} wks)`} value={data ? `${Math.round(data.weeks.reduce((s, w) => s + w.committedHrs, 0))} h` : '…'} />
       </div>
+
+      {/* Per-operative hours grid over the selected range (ported from renderScheduleHistory) */}
+      <Card title="Operative hours" className="mb-4">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[11px]">
+            <thead>
+              <tr className="bg-surface2">
+                <th className="min-w-[130px] px-3 py-1.5 text-left text-[10px] font-bold uppercase text-text3">Operative</th>
+                {rangeWeeks().map((wk) => (
+                  <th key={wk} colSpan={5} className="border-l-2 border-border px-2 py-1 text-center text-[10px] text-text3">
+                    W/C {wk.slice(8, 10)}/{wk.slice(5, 7)}
+                  </th>
+                ))}
+              </tr>
+              <tr className="bg-surface2">
+                <th />
+                {rangeWeeks().map((wk) =>
+                  DAYS.map((d, di) => (
+                    <th key={`${wk}-${d}`} className={`px-1 py-0.5 text-center text-[9px] font-bold text-text3 ${di === 0 ? 'border-l-2 border-border' : ''}`}>
+                      {d}
+                    </th>
+                  )),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {ops.map((op) => (
+                <tr key={op.id} className="border-t border-border">
+                  <td className="whitespace-nowrap px-3 py-1 font-semibold">{op.name}</td>
+                  {rangeWeeks().map((wk) =>
+                    DAYS.map((_, di) => {
+                      const hrs = getOpDayHrs(op, wk, di);
+                      const override = (op.dayHrs ?? {})[`${wk}_d${di}`] !== undefined;
+                      return (
+                        <td
+                          key={`${wk}-${di}`}
+                          className={`px-1 py-1 text-center tabular-nums ${di === 0 ? 'border-l-2 border-border' : ''} ${
+                            hrs === 0 ? 'text-red' : override ? 'font-bold text-amber' : 'text-text2'
+                          }`}
+                        >
+                          {hrs === 0 ? '·' : hrs}
+                        </td>
+                      );
+                    }),
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-surface2 font-bold">
+                <td className="px-3 py-1 text-[10px]">Total</td>
+                {rangeWeeks().map((wk) => (
+                  <td key={wk} colSpan={5} className="border-l-2 border-border px-2 py-1 text-center text-teal">
+                    {Math.round(ops.reduce((s, op) => s + opWeekTotal(op, wk), 0) * 10) / 10}h
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="border-t border-border px-3 py-1.5 text-[10px] text-text3">🟠 Amber = override applied · 🔴 · = day off</div>
+      </Card>
       <Card title="By week">
         <Table head={['Week', 'Tickets', 'Committed', 'Capacity', 'Utilisation']}>
           <QueryState isLoading={isLoading} error={error} colSpan={5} />

@@ -53,12 +53,14 @@ export function Dashboard() {
             sub="PART tickets live"
             tone="blue"
           />
-          <Metric
-            label="Moulds in Use"
-            value={data ? `${data.moulds.inUse}/${data.moulds.total}` : "…"}
-            sub={`${data?.moulds.utilisation ?? 0}% utilisation`}
-            tone={data && data.moulds.utilisation >= 80 ? "amber" : "default"}
-          />
+          <div className="cursor-pointer" title="Open Mould Planner" onClick={() => navigate('/moulds')}>
+            <Metric
+              label="Moulds in Use"
+              value={data ? `${data.moulds.inUse}/${data.moulds.total}` : "…"}
+              sub={`${data?.moulds.utilisation ?? 0}% utilisation`}
+              tone={data && data.moulds.utilisation >= 80 ? "amber" : "default"}
+            />
+          </div>
           <Metric
             label="Total Man Hours"
             value={data ? data.tickets.manHours.toFixed(2) : "…"}

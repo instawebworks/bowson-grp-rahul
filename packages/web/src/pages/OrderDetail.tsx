@@ -35,6 +35,8 @@ import { EditTicketModal } from '../components/EditTicketModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { EditOrderForm } from '../components/EditOrderForm';
 import { CatalogueForm } from '../components/CatalogueForm';
+import { buildDespatchHtml, openDocument } from '../lib/documents';
+import { computeSuggestedSchedule } from '../lib/suggestSchedule';
 import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
 import type { Order, Ticket } from '../lib/types';
@@ -206,15 +208,15 @@ export function OrderDetail() {
     return () => clearInterval(t);
   }, []);
 
-  /** Bulk advance the ticked tickets to a stage (ported from otAdvanceToStage). */
-  async function bulkAdvance() {
-    if (!bulkStage || !bulkSel.size) return;
-    if (!window.confirm(`Move ${bulkSel.size} ticket${bulkSel.size !== 1 ? 's' : ''} to "${bulkStage}"?`)) return;
+  /** Move each ticked ticket to a target stage; tickets moving into Packing
+   * without a QC ref get the shared reference (ported from odAdvanceToStage). */
+  async function runBulkMoves(moves: { id: number; stage: string; needsQcRef: boolean }[], sharedQcRef: string) {
     setBulkBusy(true);
     try {
-      for (const tid of bulkSel) {
+      for (const m of moves) {
         try {
-          await apiClient.post(`/api/tickets/${tid}/status`, { status: bulkStage });
+          if (m.needsQcRef && sharedQcRef) await apiClient.patch(`/api/tickets/${m.id}`, { qcRef: sharedQcRef });
+          await apiClient.post(`/api/tickets/${m.id}/status`, { status: m.stage });
         } catch {
           /* server gate (family) — skip */
         }
@@ -228,6 +230,48 @@ export function OrderDetail() {
       qc.invalidateQueries({ queryKey: ['tickets'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
     }
+  }
+
+  /** Gate + confirm shared by both bulk actions. */
+  function startBulk(moves: { id: number; stage: string; needsQcRef: boolean }[], label: string) {
+    if (!moves.length) return;
+    const needQc = moves.filter((m) => m.needsQcRef);
+    if (needQc.length) {
+      const ref = window.prompt(
+        `${needQc.length} ticket${needQc.length !== 1 ? 's' : ''} moving to Packing ${needQc.length !== 1 ? 'have' : 'has'} no QC reference. Enter one to apply:`,
+      );
+      if (!ref?.trim()) return;
+      void runBulkMoves(moves, ref.trim());
+      return;
+    }
+    if (!window.confirm(`${label}?`)) return;
+    void runBulkMoves(moves, '');
+  }
+
+  /** Bulk advance the ticked tickets to a chosen stage. */
+  function bulkAdvance() {
+    if (!bulkStage || !bulkSel.size) return;
+    const moves = [...bulkSel]
+      .map((tid) => {
+        const t = (order?.tickets ?? []).find((x) => x.id === tid);
+        if (!t || t.type === 'RAW' || t.status === bulkStage) return null;
+        return { id: tid, stage: bulkStage, needsQcRef: bulkStage === '9. Packing' && !t.qcRef };
+      })
+      .filter(Boolean) as { id: number; stage: string; needsQcRef: boolean }[];
+    startBulk(moves, `Move ${moves.length} ticket${moves.length !== 1 ? 's' : ''} to "${bulkStage}"`);
+  }
+
+  /** Advance each ticked ticket one stage (ported from odAdvanceOne). */
+  function bulkAdvanceOne() {
+    const moves = [...bulkSel]
+      .map((tid) => {
+        const t = (order?.tickets ?? []).find((x) => x.id === tid);
+        const ns = t && t.type !== 'RAW' ? nextStage(t.status) : null;
+        if (!t || !ns) return null;
+        return { id: tid, stage: ns, needsQcRef: ns === '9. Packing' && !t.qcRef };
+      })
+      .filter(Boolean) as { id: number; stage: string; needsQcRef: boolean }[];
+    startBulk(moves, `Advance ${moves.length} ticket${moves.length !== 1 ? 's' : ''} one stage`);
   }
 
   if (isLoading) return <><PageHeader title="Order" /><Content><div className="text-xs text-text3">Loading…</div></Content></>;
@@ -246,6 +290,18 @@ export function OrderDetail() {
   const tickets = order.tickets ?? [];
   const tops = tickets.filter((t) => t.compParentId == null);
   const partsOf = (compId: number) => tickets.filter((t) => t.compParentId === compId);
+  const orderOverdue =
+    !!order.deadline && order.deadline.slice(0, 10) < new Date().toISOString().slice(0, 10) &&
+    !['Despatched', 'Completed', 'Cancelled'].includes(order.status);
+  const orderPct = tops.length ? Math.round(tops.reduce((s, t) => s + (t.pct || 0), 0) / tops.length) : 0;
+
+  /** Manual delivery-note reprint for a despatched / ready order (prototype 📄 button). */
+  function openDespatchNote() {
+    const ts = tickets.filter((t) => t.type !== 'RAW').map((t) => ({ ...t, order }));
+    if (!ts.length) return;
+    const dDate = ts.find((t) => t.despatchDate)?.despatchDate ?? new Date().toISOString().slice(0, 10);
+    openDocument(buildDespatchHtml(ts, dDate, false));
+  }
 
   return (
     <>
@@ -303,6 +359,9 @@ export function OrderDetail() {
         actions={
           <>
             <Link to="/orders"><Button>← All Orders</Button></Link>
+            {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
+              <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
+            )}
             {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
             {canManage && <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>}
             {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
@@ -311,13 +370,52 @@ export function OrderDetail() {
         }
       />
       <Content>
-        <div className="mb-4 grid grid-cols-2 gap-2.5 md:grid-cols-5">
+        <div className="mb-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
           <Meta label="Status" value={<StatusPill status={order.status} />} />
           <Meta label="Customer ref" value={order.siteName ?? '—'} />
-          <Meta label="Deadline" value={fmtDate(order.deadline)} />
+          <Meta
+            label="Deadline"
+            value={
+              <span className={orderOverdue ? 'font-bold text-red' : ''}>
+                {fmtDate(order.deadline)}{orderOverdue ? ' ⚠ overdue' : ''}
+              </span>
+            }
+          />
+          <Meta label="Target W/C" value={order.wc ?? '—'} />
+          <Meta label="Despatch" value={order.despatch ?? '—'} />
           <Meta label="Resin" value={order.resinType} />
           <Meta label="Value" value={money(order.value)} />
+          <Meta
+            label="Progress"
+            value={<div className="pt-1"><ProgressBar pct={orderPct} /></div>}
+          />
         </div>
+        {order.notes && (
+          <div className="mb-4 rounded-lg bg-surface2 px-3 py-2 text-xs"><span className="text-text3">Notes:</span> {order.notes}</div>
+        )}
+
+        {/* Saved packing checklist (ported from the order drawer's 📦 panel) */}
+        {(order.packingChecklist?.length ?? 0) > 0 && (
+          <div className="mb-4 rounded-lg border border-border bg-surface px-3.5 py-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-bold">📦 Packing Hardware</span>
+              <span className="text-[10px] text-text3">
+                {order.packingChecklist!.filter((h) => h.checked).length}/{order.packingChecklist!.length} picked
+              </span>
+            </div>
+            {order.packingChecklist!.map((h, i) => (
+              <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
+                <span className={h.checked ? 'text-teal' : 'text-text3'}>{h.checked ? '✓' : '○'}</span>
+                <span className="flex-1">{h.name}</span>
+                <span className="tabular-nums text-text2">×{h.qty}</span>
+                {h.notes && <span className="text-[10px] italic text-text3">{h.notes}</span>}
+              </div>
+            ))}
+            {order.packingNotes && (
+              <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-text2">{order.packingNotes}</div>
+            )}
+          </div>
+        )}
 
         <Card
           title={`Tickets (${tickets.length})`}
@@ -326,6 +424,18 @@ export function OrderDetail() {
           {canManage && bulkSel.size > 0 && (
             <div className="flex flex-wrap items-center gap-2.5 border-b border-teal bg-teal-l px-3.5 py-2">
               <span className="text-xs font-bold text-teal">{bulkSel.size} selected</span>
+              <label className="flex cursor-pointer items-center gap-1 text-[11px] text-text2">
+                <input
+                  type="checkbox"
+                  className="accent-teal"
+                  checked={tickets.filter((t) => t.type !== 'RAW').every((t) => bulkSel.has(t.id))}
+                  onChange={(e) =>
+                    setBulkSel(e.target.checked ? new Set(tickets.filter((t) => t.type !== 'RAW').map((t) => t.id)) : new Set())
+                  }
+                />
+                Select all
+              </label>
+              <Button variant="primary" disabled={bulkBusy} onClick={bulkAdvanceOne}>→ Advance one stage</Button>
               <select
                 value={bulkStage}
                 onChange={(e) => setBulkStage(e.target.value)}
@@ -334,9 +444,7 @@ export function OrderDetail() {
                 <option value="">— Move to stage —</option>
                 {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              <Button variant="primary" disabled={!bulkStage || bulkBusy} onClick={() => void bulkAdvance()}>
-                ▶ Advance selected
-              </Button>
+              <Button disabled={!bulkStage || bulkBusy} onClick={bulkAdvance}>Move to stage</Button>
               <Button className="ml-auto" onClick={() => setBulkSel(new Set())}>✕ Clear</Button>
             </div>
           )}
@@ -451,37 +559,17 @@ function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTick
   const ops = operatives ?? [];
   const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
 
-  const suggestion = useMemo(() => {
-    const committed = new Map<string, number>();
-    for (const t of allTickets ?? []) {
-      if (t.orderId === order.id) continue;
-      if (!(LIVE_STATUSES as readonly string[]).includes(t.status)) continue;
-      const key = wcKey(t.wc);
-      if (!key) continue;
-      committed.set(key, (committed.get(key) ?? 0) + (t.hrs || 0) * (weights[t.status] ?? 1));
-    }
-    let hrsRemaining = totalHrs;
-    let startKey: string | null = null;
-    let endKey: string | null = null;
-    let weeksNeeded = 0;
-    const weekKeys = nextWeeks(26).map((w) => wcKey(w));
-    for (const key of weekKeys) {
-      const cap = weekCapacityFor(ops, key);
-      const spare = cap - (committed.get(key) ?? 0);
-      if (cap > 0 && spare <= 0) continue; // week is full — skip
-      if (!startKey) startKey = key;
-      hrsRemaining -= cap > 0 ? Math.max(spare, 0) : HRS_PER_DAY * 5;
-      weeksNeeded++;
-      endKey = key;
-      if (hrsRemaining <= 0) break;
-    }
-    startKey ??= weekKeys[0]!;
-    endKey ??= startKey;
-    const end = new Date(endKey);
-    end.setDate(end.getDate() + 11); // +1 week buffer, land on the Friday
-    const noCapacity = weekKeys.slice(0, 8).every((k) => weekCapacityFor(ops, k) === 0);
-    return { startKey, deadline: isoDate(end), weeksNeeded, noCapacity };
-  }, [allTickets, ops, order.id, totalHrs, weights]);
+  const suggestion = useMemo(
+    () =>
+      computeSuggestedSchedule({
+        ops,
+        allTickets: allTickets ?? [],
+        totalHrs,
+        weights,
+        excludeOrderId: order.id,
+      }),
+    [allTickets, ops, order.id, totalHrs, weights],
+  );
 
   if (!orderTickets.length) return null;
   const alreadySet = !!order.deadline;

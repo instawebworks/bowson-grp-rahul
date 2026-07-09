@@ -1483,3 +1483,90 @@ features from the 2026-07-08 audit are ported. Remaining known items are the
 security/housekeeping flags from 2026-06-30 (DEFAULT_ROLE=admin, empty-JWT
 acceptance, rotate exposed secrets, remove login prefill) and optional
 polish (e.g. per-order expand groups in All Orders, History hours grid).
+
+---
+
+## 2026-07-09 — Parity re-audit + gap-fix sweep (Phase 6)
+
+Ran a full 5-agent re-audit of the rebuild against `t-card.html` (all views,
+drawers, board, schedule/moulds, catalogue/import), verified every claimed
+gap against both codebases, then fixed everything found.
+
+**Schema / API**
+- operatives gain `payRate` (hourly £; migration applied live via /pg/query).
+- Ticket status changes now **clock everyone off** (open time_sessions are
+  ended — ported from _doMoveCore).
+- `POST /tickets/:id/cure/clear` accepts `{advance:false}` → **Touch Up**
+  (wipes the timer without advancing).
+- Add-ticket accepts **`partSpecs`** — per-part colour overrides when
+  instantiating an assembly (import wizard step 4 parity).
+
+**T-Card Board (biggest cluster)**
+- **Drag gates ported from kbDrop/kbApplyMove:** QC Check→Packing drags ask
+  for a QC ref (saved to the ticket); dragging OUT of Spec/Materials asks the
+  "spec reviewed / materials available" confirmation.
+- **Cards now match the prototype:** ⚠ M2 RESIN strip, spec line, ↳ parent
+  assembly line, theme-image thumbnail (click → lightbox), clickable
+  assignee timer chips (▶/⏸ + live state; unassigned chip opens the ops
+  menu), total time-logged chip with ● LIVE, footer with order # +
+  due date / ⚠ OVERDUE + progress bar; stage columns sort by deadline.
+- **By-Operative view:** tickets grouped under stage sub-headers with counts
+  + stage pill per card; a multi-assignee ticket appears under EVERY
+  assigned operative; column headers show the op's live-timer total.
+- **Cure:** expired badge → Confirm / **🔧 Touch Up** / More Time; active
+  badge → progress bar + **✓ Ready now**; cure prompts honour the
+  catalogue's per-product gel/lam cure defaults. Bulk bar gains Select all.
+
+**Detail views**
+- Ticket modal: Unit £ / Drawing / QC Ref / Despatch-date-or-W/C meta,
+  per-session time log, **📐 View Spec / Parts** (new `SpecModal` — B&W
+  grayscale document viewer with download, parts/drawing fallback table),
+  theme image with lightbox.
+- Order detail: saved **📦 Packing Hardware** panel (n/m picked + notes),
+  **📄 Despatch Note** button on despatched/ready orders, meta gains
+  Target W/C / Despatch method / notes / overdue tag / progress bar; bulk
+  bar gains **→ Advance one stage** + Select all + shared QC-ref prompt on
+  bulk→Packing; **theme image editable** in Edit Order.
+- Customers: card click now opens a **detail view** (contact + clickable
+  order list → order) with Edit contact; Step 2's suggested schedule now
+  uses the same capacity week-walk as the prototype (shared
+  `lib/suggestSchedule.ts`).
+
+**Admin / catalogue**
+- Operatives: **Hourly rate £** field + £X/hr on the card + **Remove
+  operative**; Moulds: **Delete** in the edit form, board grouped into
+  **In Use / Available / Maintenance** with per-ticket ✕ unassign,
+  "+ Assign next ticket" quick-assign, maintenance panel (notes, stranded
+  count, **Mark as Active →**), cure badges on rows, register filter box,
+  Unlinked tab "Edit Product →".
+- **Catalogue CSV import is now the full 5-step wizard** (ported from
+  catImport): template download → upload/parse with errors+warnings →
+  **Define SKUs** (slide-type + dimensions with live SKU preview, ported
+  buildSku) → review table (parts, New/↻ Update status) → confirm tiles —
+  and imports **UPSERT** existing products by product code.
+- Order import wizard step 4 gains **per-part spec inputs** (blank inherits
+  the slide colour) wired through `partSpecs`.
+
+**Smaller fixes:** Ready view shows the real QC Ref; Orders list shows the
+despatch date after "✓ Despatched"; All Tickets sorts by deadline and
+confirms bulk advances; nav "All Orders" gets the red **overdue pill**;
+dashboard "Moulds in Use" metric links to the planner; schedule week-cards
+show assignee names; History tab gains the **per-operative hours grid**
+(override=amber, off=red, week totals).
+
+**Verified**
+- All packages typecheck.
+- **API (live):** stage move ends open sessions; Touch Up clears without
+  advancing; partSpecs land on the right parts; payRate persists; catalogue
+  PATCH keeps parts when not provided.
+- **UI (Playwright), 8 groups:** overdue pill; board M2 strip + OVERDUE
+  footer + both drag gates (warn confirm on Spec→Queue, QC-ref on
+  QC→Packing with ref saved); ticket modal meta fields; order detail
+  packing panel + suggest + advance-one; customer detail + order
+  click-through; moulds groups + register filter; catalogue import wizard
+  step 1; history hours grid. Zero console/page errors.
+
+**Known deliberate differences (unchanged):** localStorage/save-HTML not
+ported (Supabase replaces them); prototype's dead code (order-row expand
+groups, putAllIntoProduction — defined but never called) not ported; the
+lightweight kb card popup is replaced by the full ticket modal.

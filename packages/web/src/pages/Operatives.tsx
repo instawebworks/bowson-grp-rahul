@@ -67,6 +67,7 @@ export function Operatives() {
                     <div className="text-sm font-bold">{o.name}</div>
                     <div className="mt-0.5 text-[11px] text-text3">
                       {weekHrs}h standard week · {active} active ticket{active === 1 ? '' : 's'}
+                      {o.payRate != null && <span className="ml-1.5 font-semibold text-teal">£{o.payRate}/hr</span>}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">

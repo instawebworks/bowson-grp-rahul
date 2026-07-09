@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { STAGE_SKILLS } from '@bowson/shared';
-import { useCreateOperative, useUpdateOperative, type OperativeFormInput } from '../lib/hooks';
+import { useCreateOperative, useDeleteOperative, useUpdateOperative, type OperativeFormInput } from '../lib/hooks';
 import type { Operative } from '../lib/types';
 import { Button, Field, Modal, inputClass } from './ui';
 
@@ -15,11 +15,13 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
   const isEdit = !!operative;
   const create = useCreateOperative();
   const update = useUpdateOperative();
+  const del = useDeleteOperative();
   const pending = create.isPending || update.isPending;
 
   const [name, setName] = useState(operative?.name ?? '');
   const [skills, setSkills] = useState<string[]>(operative?.skills ?? []);
   const [defaultHrs, setDefaultHrs] = useState<number | ''>(operative?.defaultHrs ?? '');
+  const [payRate, setPayRate] = useState<number | ''>(operative?.payRate ?? '');
   const [dayPattern, setDayPattern] = useState<number[]>(
     operative?.dayPattern && operative.dayPattern.length >= 7
       ? operative.dayPattern.slice(0, 7)
@@ -46,6 +48,7 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       skills,
       defaultHrs: defaultHrs === '' ? null : Number(defaultHrs),
       dayPattern,
+      payRate: payRate === '' ? null : Number(payRate),
     };
     try {
       if (isEdit) await update.mutateAsync({ id: operative.id, input });
@@ -62,6 +65,19 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       onClose={onClose}
       footer={
         <>
+          {isEdit && (
+            <Button
+              variant="danger"
+              disabled={del.isPending}
+              onClick={async () => {
+                if (!window.confirm(`Remove operative ${operative.name}? Their time history is kept.`)) return;
+                await del.mutateAsync(operative.id);
+                onClose();
+              }}
+            >
+              Remove operative
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={submit} disabled={pending}>
             {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Create operative'}
@@ -82,6 +98,17 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
             value={defaultHrs}
             onChange={(e) => setDefaultHrs(e.target.value === '' ? '' : Number(e.target.value))}
             placeholder="7.5"
+          />
+        </Field>
+        <Field label="Hourly rate £">
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            className={inputClass}
+            value={payRate}
+            onChange={(e) => setPayRate(e.target.value === '' ? '' : Number(e.target.value))}
+            placeholder="e.g. 14.50"
           />
         </Field>
       </div>

@@ -1,14 +1,85 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCustomers, useOrders } from '../lib/hooks';
-import { Button, Content, PageHeader, inputClass } from '../components/ui';
+import { Button, Content, Modal, PageHeader, StatusPill, inputClass } from '../components/ui';
 import { CustomerForm } from '../components/CustomerForm';
 import { useAuth } from '../lib/auth';
-import type { Customer } from '../lib/types';
+import { money } from '../lib/format';
+import type { Customer, Order } from '../lib/types';
+
+/** Customer detail — contact info + that customer's clickable order list
+ * (ported from openCustDetail); "Edit contact" opens the edit form. */
+function CustomerDetail({
+  customer,
+  orders,
+  canManage,
+  onEdit,
+  onClose,
+}: {
+  customer: Customer;
+  orders: Order[];
+  canManage: boolean;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <Modal
+      title={customer.name}
+      sub={customer.region ?? undefined}
+      onClose={onClose}
+      footer={
+        <>
+          {canManage && <Button onClick={onEdit}>✎ Edit contact</Button>}
+          <Button variant="primary" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="mb-4 grid grid-cols-2 gap-2.5 text-xs">
+        {[
+          ['Contact', customer.contact],
+          ['Phone', customer.phone],
+          ['Email', customer.email],
+          ['Region', customer.region],
+        ].map(([label, val]) => (
+          <div key={label}>
+            <div className="text-[9px] font-bold uppercase tracking-wide text-text3">{label}</div>
+            <div className="mt-0.5 font-medium">{val || '—'}</div>
+          </div>
+        ))}
+        <div className="col-span-2">
+          <div className="text-[9px] font-bold uppercase tracking-wide text-text3">Address</div>
+          <div className="mt-0.5 whitespace-pre-line font-medium">{customer.address || '—'}</div>
+        </div>
+      </div>
+      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text3">Orders ({orders.length})</div>
+      {orders.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-surface2 py-5 text-center text-xs text-text3">No orders yet.</div>
+      ) : (
+        <div className="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border">
+          {orders.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => { onClose(); navigate(`/orders/${o.id}`); }}
+              className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-xs last:border-0 hover:bg-teal-l/40"
+            >
+              <span className="font-bold text-teal">{o.orderNumber}</span>
+              <span className="max-w-36 truncate text-text2">{o.siteName ?? '—'}</span>
+              <StatusPill status={o.status} />
+              <span className="ml-auto tabular-nums text-text2">{money(o.value)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 export function Customers() {
   const { data, isLoading, error } = useCustomers();
   const { data: orders } = useOrders();
   const [showCreate, setShowCreate] = useState(false);
+  const [detail, setDetail] = useState<Customer | null>(null);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [q, setQ] = useState('');
   const { canManage } = useAuth();
@@ -27,6 +98,15 @@ export function Customers() {
     <>
       {showCreate && <CustomerForm onClose={() => setShowCreate(false)} />}
       {editing && <CustomerForm customer={editing} onClose={() => setEditing(null)} />}
+      {detail && !editing && (
+        <CustomerDetail
+          customer={detail}
+          orders={(orders ?? []).filter((o) => o.customerId === detail.id)}
+          canManage={canManage}
+          onEdit={() => { setEditing(detail); setDetail(null); }}
+          onClose={() => setDetail(null)}
+        />
+      )}
       <PageHeader
         title="Customers"
         sub={`${rows.length} customer${rows.length === 1 ? '' : 's'}`}
@@ -46,7 +126,7 @@ export function Customers() {
             return (
               <button
                 key={c.id}
-                onClick={() => setEditing(c)}
+                onClick={() => setDetail(c)}
                 className="rounded-lg border border-border bg-surface p-3.5 text-left transition hover:border-teal"
               >
                 <div className="truncate text-sm font-bold">{c.name}</div>

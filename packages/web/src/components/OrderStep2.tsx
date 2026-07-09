@@ -1,14 +1,17 @@
 import { useMemo, useRef, useState, type ComponentProps } from 'react';
-import { RESIN_TYPES, formatWc, isoDate, mondayOf, wcForDeadline } from '@bowson/shared';
+import { RESIN_TYPES, STAGE_HRS_REMAINING, formatWc, wcForDeadline } from '@bowson/shared';
 import {
   useAddTicket,
   useCatalogue,
   useDeleteTicket,
+  useOperatives,
   useOrder,
-  useSchedule,
+  useSettings,
+  useTickets,
   useUpdateOrder,
   useUpdateTicket,
 } from '../lib/hooks';
+import { computeSuggestedSchedule } from '../lib/suggestSchedule';
 import { Button, Field as FieldBase, FormSection as FormSectionBase, inputClassLg as inputClass } from './ui';
 import { CatalogueForm } from './CatalogueForm';
 import { TicketForm } from './TicketForm';
@@ -41,7 +44,9 @@ export function OrderStep2({
 }) {
   const { data: order } = useOrder(orderId);
   const { data: catalogue } = useCatalogue();
-  const { data: schedule } = useSchedule();
+  const { data: operatives } = useOperatives();
+  const { data: allTickets } = useTickets();
+  const { data: settings } = useSettings();
   const add = useAddTicket(orderId);
   const del = useDeleteTicket(orderId);
   const updateOrder = useUpdateOrder(orderId);
@@ -72,17 +77,22 @@ export function OrderStep2({
   const tops = tickets.filter((t) => t.compParentId == null);
   const partsOf = (id: number) => tickets.filter((t) => t.compParentId === id);
   const totalHrs = tickets.reduce((s, t) => s + (t.hrs || 0), 0);
-  const weeklyCap = schedule?.weeklyCapacity ?? 0;
-  const weeksNeeded = totalHrs > 0 ? (weeklyCap > 0 ? Math.max(1, Math.ceil(totalHrs / weeklyCap)) : 1) : 0;
 
-  // Suggested schedule: start this Monday, run weeksNeeded weeks, deadline = +1 week buffer.
-  const startMonday = mondayOf(new Date());
-  const endMonday = new Date(startMonday);
-  endMonday.setDate(startMonday.getDate() + Math.max(0, weeksNeeded - 1) * 7);
-  const deadlineDate = new Date(endMonday);
-  deadlineDate.setDate(endMonday.getDate() + 11);
-  const suggestedWc = formatWc(startMonday);
-  const suggestedDeadline = isoDate(deadlineDate);
+  // Suggested schedule — week-walk filling spare capacity (prototype maths).
+  const suggestion = useMemo(
+    () =>
+      computeSuggestedSchedule({
+        ops: operatives ?? [],
+        allTickets: allTickets ?? [],
+        totalHrs,
+        weights: settings?.stageWeights ?? STAGE_HRS_REMAINING,
+        excludeOrderId: orderId,
+      }),
+    [operatives, allTickets, totalHrs, settings, orderId],
+  );
+  const weeksNeeded = totalHrs > 0 ? suggestion.weeksNeeded : 0;
+  const suggestedWc = formatWc(new Date(suggestion.startKey));
+  const suggestedDeadline = suggestion.deadline;
   const scheduleSet = !!order?.deadline;
 
   function editDetail(id: number, value: string) {
@@ -253,7 +263,7 @@ export function OrderStep2({
                 </div>
                 <div>
                   <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text3">Suggested W/C start</div>
-                  <div className="text-[15px] font-bold text-teal">{weekLabel(startMonday)}</div>
+                  <div className="text-[15px] font-bold text-teal">{suggestedWc}</div>
                   <div className="mt-1 text-xs text-text3">{weeksNeeded} week{weeksNeeded === 1 ? '' : 's'} of production</div>
                 </div>
                 <div>

@@ -231,7 +231,13 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                   <td className="px-3 py-2"><PctBadge pct={orderProgress(o)} /></td>
                   <td className="px-3 py-2 text-[11px]">
                     {despatched ? (
-                      <span className="font-semibold text-teal">✓ Despatched</span>
+                      <span className="font-semibold text-teal">
+                        ✓ Despatched{(() => {
+                          const dates = (o.tickets ?? []).map((t) => t.despatchDate).filter(Boolean) as string[];
+                          const latest = dates.sort().at(-1);
+                          return latest ? ` ${latest}` : '';
+                        })()}
+                      </span>
                     ) : !o.deadline ? (
                       <span className="text-text3">—</span>
                     ) : (

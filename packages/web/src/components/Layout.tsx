@@ -3,7 +3,22 @@ import { NAV } from '../nav';
 import { NavIcon } from './icons';
 import { useAuth } from '../lib/auth';
 import { useOrders, useTickets } from '../lib/hooks';
+import { daysToDeadline } from '../lib/format';
 import logoUrl from '../assets/bowson-logo.jpg';
+
+/** Red overdue-count badge on the "All Orders" nav item (prototype od-pill). */
+function OverduePill() {
+  const { data: orders } = useOrders();
+  const n = (orders ?? []).filter(
+    (o) =>
+      o.deadline && (daysToDeadline(o.deadline) ?? 0) < 0 &&
+      !['Despatched', 'Completed', 'Cancelled'].includes(o.status),
+  ).length;
+  if (!n) return null;
+  return (
+    <span className="ml-auto rounded-full bg-red px-1.5 py-px text-[9px] font-bold text-white">{n}</span>
+  );
+}
 
 export function Layout() {
   return (
@@ -36,6 +51,7 @@ export function Layout() {
                 >
                   <NavIcon name={item.icon} />
                   {item.label}
+                  {item.path === '/orders' && <OverduePill />}
                 </NavLink>
               ))}
             </div>
