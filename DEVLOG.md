@@ -1570,3 +1570,11 @@ show assignee names; History tab gains the **per-operative hours grid**
 ported (Supabase replaces them); prototype's dead code (order-row expand
 groups, putAllIntoProduction — defined but never called) not ported; the
 lightweight kb card popup is replaced by the full ticket modal.
+
+### Client documentation (same day)
+
+- Wrote the client-facing feature summary — plain-language, benefit-first,
+  organised by workflow area: `docs/CLIENT_FEATURES.md` (markdown source),
+  `docs/Bowson-GRP-Feature-Summary.docx` (Word, generated via Word COM from a
+  styled HTML — pandoc isn't installed), plus a shareable/printable web page
+  published as a Claude artifact.

@@ -23,3 +23,6 @@ packages/api/prisma/*.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Word temporary lock files
+~$*
