@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { STAGE_SKILLS } from '@bowson/shared';
 import { useCreateOperative, useDeleteOperative, useUpdateOperative, type OperativeFormInput } from '../lib/hooks';
 import type { Operative } from '../lib/types';
-import { Button, Field, Modal, inputClass } from './ui';
+import { Button, ConfirmDialog, Field, Modal, inputClass } from './ui';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -28,6 +28,7 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       : defaultPattern(operative?.defaultHrs ?? 7.5),
   );
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const toggleSkill = (s: string) =>
     setSkills((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -66,15 +67,7 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       footer={
         <>
           {isEdit && (
-            <Button
-              variant="danger"
-              disabled={del.isPending}
-              onClick={async () => {
-                if (!window.confirm(`Remove operative ${operative.name}? Their time history is kept.`)) return;
-                await del.mutateAsync(operative.id);
-                onClose();
-              }}
-            >
+            <Button variant="danger" disabled={del.isPending} onClick={() => setConfirmRemove(true)}>
               Remove operative
             </Button>
           )}
@@ -161,6 +154,31 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
         </div>
       </div>
       {error && <div className="mt-3 rounded-md bg-red/10 px-3 py-2 text-xs text-red">{error}</div>}
+
+      {confirmRemove && isEdit && (
+        <ConfirmDialog
+          title={`Remove ${operative.name}?`}
+          message={
+            <>
+              <strong>{operative.name}</strong> will be removed from the team and their tickets become
+              unassigned. Recorded time history is kept. This cannot be undone.
+            </>
+          }
+          confirmLabel="Remove operative"
+          busy={del.isPending}
+          onCancel={() => setConfirmRemove(false)}
+          onConfirm={async () => {
+            try {
+              await del.mutateAsync(operative.id);
+              setConfirmRemove(false);
+              onClose();
+            } catch (e) {
+              setConfirmRemove(false);
+              setError((e as Error).message);
+            }
+          }}
+        />
+      )}
     </Modal>
   );
 }

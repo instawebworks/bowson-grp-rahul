@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useCreateMould, useDeleteMould, useUpdateMould, type MouldFormInput } from '../lib/hooks';
 import type { Mould } from '../lib/types';
-import { Button, Field, Modal, inputClass } from './ui';
+import { Button, ConfirmDialog, Field, Modal, inputClass } from './ui';
 
 export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => void }) {
   const isEdit = !!mould;
@@ -18,6 +18,7 @@ export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => vo
     notes: mould?.notes ?? '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const set = <K extends keyof MouldFormInput>(k: K, v: MouldFormInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   async function submit() {
@@ -43,15 +44,7 @@ export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => vo
       footer={
         <>
           {isEdit && (
-            <Button
-              variant="danger"
-              disabled={del.isPending}
-              onClick={async () => {
-                if (!window.confirm(`Delete mould ${mould.ref}? Tickets keep their history; the mould is removed from planning.`)) return;
-                await del.mutateAsync(mould.id);
-                onClose();
-              }}
-            >
+            <Button variant="danger" disabled={del.isPending} onClick={() => setConfirmDelete(true)}>
               Delete
             </Button>
           )}
@@ -87,6 +80,31 @@ export function MouldForm({ mould, onClose }: { mould?: Mould; onClose: () => vo
         </div>
       </div>
       {error && <div className="mt-3 rounded-md bg-red/10 px-3 py-2 text-xs text-red">{error}</div>}
+
+      {confirmDelete && isEdit && (
+        <ConfirmDialog
+          title={`Delete mould ${mould.ref}?`}
+          message={
+            <>
+              The mould is removed from planning and can no longer be assigned. Tickets that used it keep
+              their history. This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete mould"
+          busy={del.isPending}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            try {
+              await del.mutateAsync(mould.id);
+              setConfirmDelete(false);
+              onClose();
+            } catch (e) {
+              setConfirmDelete(false);
+              setError((e as Error).message);
+            }
+          }}
+        />
+      )}
     </Modal>
   );
 }

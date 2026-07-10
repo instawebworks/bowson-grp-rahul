@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { generateSku } from '@bowson/shared';
 import { useCatalogue, useCreateCatalogue, useDeleteCatalogue, type CatalogueFormInput } from '../lib/hooks';
-import { Button, Card, Content, Modal, PageHeader, QueryState, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, QueryState, Table } from '../components/ui';
 import { CatalogueForm } from '../components/CatalogueForm';
 import { CatalogueImportWizard } from '../components/CatalogueImportWizard';
 import { SpecModal } from '../components/SpecModal';
@@ -29,6 +29,7 @@ export function Catalogue() {
   const [showSkuGen, setShowSkuGen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [specView, setSpecView] = useState<Cat | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Cat | null>(null);
   const create = useCreateCatalogue();
   const del = useDeleteCatalogue();
   const { canManage } = useAuth();
@@ -61,6 +62,24 @@ export function Catalogue() {
       {showSkuGen && <SkuGeneratorModal catalogue={rows} onClose={() => setShowSkuGen(false)} />}
       {showImport && <CatalogueImportWizard catalogue={rows} onClose={() => setShowImport(false)} />}
       {specView && <SpecModal template={specView} onClose={() => setSpecView(null)} />}
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Delete "${confirmDel.name}"?`}
+          message={
+            <>
+              <strong>{confirmDel.productCode} · {confirmDel.name}</strong> is removed from the catalogue.
+              Orders already created from this template are not affected. This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete template"
+          busy={del.isPending}
+          onCancel={() => setConfirmDel(null)}
+          onConfirm={async () => {
+            await del.mutateAsync(confirmDel.id);
+            setConfirmDel(null);
+          }}
+        />
+      )}
       <PageHeader title="Product Catalogue" sub={`${rows.length} template${rows.length === 1 ? '' : 's'}`} globalActions={false} />
       <Content>
         {/* Toolbar */}
@@ -103,11 +122,7 @@ export function Catalogue() {
                   {canManage && (
                     <div className="flex justify-end gap-1.5">
                       <Button onClick={() => setEditing(c)}>Edit</Button>
-                      <Button
-                        variant="danger"
-                        disabled={del.isPending}
-                        onClick={async () => { if (confirm(`Delete "${c.name}" from the catalogue?`)) await del.mutateAsync(c.id); }}
-                      >
+                      <Button variant="danger" disabled={del.isPending} onClick={() => setConfirmDel(c)}>
                         Delete
                       </Button>
                     </div>
@@ -124,6 +139,7 @@ export function Catalogue() {
 
 function CatalogueDetail({ cat, canManage, onClose, onEdit }: { cat: Cat; canManage: boolean; onClose: () => void; onEdit: () => void }) {
   const del = useDeleteCatalogue();
+  const [askDelete, setAskDelete] = useState(false);
   return (
     <Modal
       title={cat.name}
@@ -133,15 +149,7 @@ function CatalogueDetail({ cat, canManage, onClose, onEdit }: { cat: Cat; canMan
       footer={
         canManage ? (
           <>
-            <Button
-              variant="danger"
-              disabled={del.isPending}
-              onClick={async () => {
-                if (!confirm(`Delete "${cat.name}" from the catalogue?`)) return;
-                await del.mutateAsync(cat.id);
-                onClose();
-              }}
-            >
+            <Button variant="danger" disabled={del.isPending} onClick={() => setAskDelete(true)}>
               Delete
             </Button>
             <Button variant="primary" onClick={onEdit}>Edit</Button>
@@ -186,6 +194,26 @@ function CatalogueDetail({ cat, canManage, onClose, onEdit }: { cat: Cat; canMan
         </ul>
       ) : (
         <div className="text-xs text-text3">—</div>
+      )}
+
+      {askDelete && (
+        <ConfirmDialog
+          title={`Delete "${cat.name}"?`}
+          message={
+            <>
+              <strong>{cat.productCode} · {cat.name}</strong> is removed from the catalogue. Orders already
+              created from this template are not affected. This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete template"
+          busy={del.isPending}
+          onCancel={() => setAskDelete(false)}
+          onConfirm={async () => {
+            await del.mutateAsync(cat.id);
+            setAskDelete(false);
+            onClose();
+          }}
+        />
       )}
     </Modal>
   );

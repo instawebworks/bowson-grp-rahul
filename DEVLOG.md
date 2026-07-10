@@ -1578,3 +1578,39 @@ lightweight kb card popup is replaced by the full ticket modal.
   `docs/Bowson-GRP-Feature-Summary.docx` (Word, generated via Word COM from a
   styled HTML — pandoc isn't installed), plus a shareable/printable web page
   published as a Claude artifact.
+
+---
+
+## 2026-07-10 — Manual testing session: validation fix + styled confirm dialogs
+
+**Done**
+- Ran the app locally and walked the user through a full manual test plan
+  (reference data → order creation → production workflow → board → planning).
+- Fixed the first bug found while testing, then a UX sweep replacing every
+  native browser popup with styled dialogs.
+
+**Features added / modified**
+- **Fix: "Invalid request body" when saving a catalogue template.** The
+  hardware checklist schema required `qty >= 1`, but the form's own default
+  list includes "Flange Supports × 0" — every save with a qty-0 row was
+  rejected. Schema now allows qty 0 ("listed but not needed", as in the
+  prototype). (`shared/src/schemas.ts`)
+- **Better validation errors.** The web API client now appends Zod field
+  errors to error messages (e.g. `hardware: …`) instead of the bare
+  "Invalid request body". (`web/src/lib/api.ts`)
+- **New `ConfirmDialog` component** (`web/src/components/ui.tsx`) — styled
+  window.confirm replacement: dimmed overlay, ⚠ icon, solid-red confirm for
+  destructive actions / teal for non-destructive, busy state, Esc/outside
+  cancel, stacks above Modal (z-110).
+- **All native popups replaced** (7 sites): operative remove (OperativeForm),
+  mould delete (MouldForm), catalogue delete — table row + detail modal
+  (Catalogue), order release Pending→In Progress (Orders), bulk stage move
+  (Tickets), order-detail bulk advance confirm + the QC-ref `window.prompt`
+  is now a proper input modal (OrderDetail). Delete failures now surface as
+  inline errors instead of failing silently.
+- Verified end-to-end: catalogue create with qty-0 hardware via live API
+  (201), test record deleted; full-repo typecheck green.
+
+**Next up**
+- Continue the user's manual test pass; fix issues as they're found.
+- Optionally convert the manual test plan (in chat) into `docs/MANUAL_TEST_GUIDE.md`.

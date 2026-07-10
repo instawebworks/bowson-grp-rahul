@@ -26,8 +26,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     let body: unknown = null;
     try {
       body = await res.json();
-      const b = body as { message?: string; error?: string };
+      const b = body as { message?: string; error?: string; details?: Record<string, string[]> };
       message = b.message ?? b.error ?? message;
+      // Surface Zod field errors ("Invalid request body" alone is undebuggable).
+      if (b.details && typeof b.details === 'object') {
+        const fields = Object.entries(b.details)
+          .map(([field, errs]) => `${field}: ${(errs ?? []).join(', ')}`)
+          .join(' · ');
+        if (fields) message += ` — ${fields}`;
+      }
     } catch {
       /* ignore */
     }

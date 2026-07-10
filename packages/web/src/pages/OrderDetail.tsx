@@ -28,7 +28,7 @@ import {
   useUpdateOrder,
 } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, Content, Modal, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
 import { TicketStatusSelect } from '../components/TicketStatusSelect';
 import { EditTicketModal } from '../components/EditTicketModal';
@@ -200,6 +200,12 @@ export function OrderDetail() {
   const [bulkSel, setBulkSel] = useState<Set<number>>(new Set());
   const [bulkStage, setBulkStage] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkGate, setBulkGate] = useState<
+    | { kind: 'confirm'; moves: { id: number; stage: string; needsQcRef: boolean }[]; label: string }
+    | { kind: 'qcref'; moves: { id: number; stage: string; needsQcRef: boolean }[] }
+    | null
+  >(null);
+  const [qcRefInput, setQcRefInput] = useState('');
   const qc = useQueryClient();
   const { canManage } = useAuth();
   const [now, setNow] = useState(() => Date.now());
@@ -211,6 +217,7 @@ export function OrderDetail() {
   /** Move each ticked ticket to a target stage; tickets moving into Packing
    * without a QC ref get the shared reference (ported from odAdvanceToStage). */
   async function runBulkMoves(moves: { id: number; stage: string; needsQcRef: boolean }[], sharedQcRef: string) {
+    setBulkGate(null);
     setBulkBusy(true);
     try {
       for (const m of moves) {
@@ -235,17 +242,12 @@ export function OrderDetail() {
   /** Gate + confirm shared by both bulk actions. */
   function startBulk(moves: { id: number; stage: string; needsQcRef: boolean }[], label: string) {
     if (!moves.length) return;
-    const needQc = moves.filter((m) => m.needsQcRef);
-    if (needQc.length) {
-      const ref = window.prompt(
-        `${needQc.length} ticket${needQc.length !== 1 ? 's' : ''} moving to Packing ${needQc.length !== 1 ? 'have' : 'has'} no QC reference. Enter one to apply:`,
-      );
-      if (!ref?.trim()) return;
-      void runBulkMoves(moves, ref.trim());
+    if (moves.some((m) => m.needsQcRef)) {
+      setQcRefInput('');
+      setBulkGate({ kind: 'qcref', moves });
       return;
     }
-    if (!window.confirm(`${label}?`)) return;
-    void runBulkMoves(moves, '');
+    setBulkGate({ kind: 'confirm', moves, label });
   }
 
   /** Bulk advance the ticked tickets to a chosen stage. */
@@ -317,6 +319,53 @@ export function OrderDetail() {
       {showCatalogue && <CatalogueForm onClose={() => setShowCatalogue(false)} />}
       {editTicket && (
         <EditTicketModal ticket={editTicket.ticket} parts={editTicket.parts} onClose={() => setEditTicket(null)} />
+      )}
+      {bulkGate?.kind === 'confirm' && (
+        <ConfirmDialog
+          title={`${bulkGate.label}?`}
+          danger={false}
+          message={
+            <>
+              Progress updates automatically and every change is recorded in the audit log.
+            </>
+          }
+          confirmLabel="▶ Move tickets"
+          busy={bulkBusy}
+          onCancel={() => setBulkGate(null)}
+          onConfirm={() => void runBulkMoves(bulkGate.moves, '')}
+        />
+      )}
+      {bulkGate?.kind === 'qcref' && (
+        <Modal
+          title="QC Reference Required"
+          onClose={() => setBulkGate(null)}
+          footer={
+            <>
+              <Button onClick={() => setBulkGate(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                disabled={!qcRefInput.trim() || bulkBusy}
+                onClick={() => void runBulkMoves(bulkGate.moves, qcRefInput.trim())}
+              >
+                Confirm &amp; Advance
+              </Button>
+            </>
+          }
+        >
+          <p className="mb-3 text-xs text-text2">
+            {bulkGate.moves.filter((m) => m.needsQcRef).length} ticket
+            {bulkGate.moves.filter((m) => m.needsQcRef).length !== 1 ? 's' : ''} moving to Packing{' '}
+            {bulkGate.moves.filter((m) => m.needsQcRef).length !== 1 ? 'have' : 'has'} no QC reference.
+            Enter one to apply.
+          </p>
+          <input
+            value={qcRefInput}
+            autoFocus
+            placeholder="e.g. QC-2025-047"
+            onChange={(e) => setQcRefInput(e.target.value)}
+            className="w-full rounded-md border border-border2 bg-surface px-2.5 py-2 text-xs outline-none focus:border-teal"
+          />
+        </Modal>
       )}
       {deleteFlow === 'pin' && (
         <ManagerPinGate

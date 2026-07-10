@@ -114,7 +114,9 @@ export const cataloguePartInputSchema = z.object({
 
 export const catalogueHardwareInputSchema = z.object({
   name: z.string().min(1),
-  qty: z.number().int().positive().default(1),
+  // qty 0 is valid — "listed on the checklist but not needed for this product"
+  // (e.g. the default "Flange Supports × 0" row, as in the prototype).
+  qty: z.number().int().nonnegative().default(1),
   notes: z.string().nullish(),
 });
 

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { GRP_STAGES, familyReadyCheck, stageIndex } from '@bowson/shared';
 import { useOperatives, useOrders, useReturnToProduction, useTickets } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, Content, Modal, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { PendingReleaseModal } from '../components/PendingReleaseModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
@@ -49,6 +49,7 @@ export function DeadlineCell({ deadline, despatchDate }: { deadline: string | nu
 type BulkGate =
   | { kind: 'blocked'; message: string }
   | { kind: 'qcref'; ids: number[]; needsQC: number[]; target: string }
+  | { kind: 'move-confirm'; ids: number[]; target: string }
   | { kind: 'bulk-status' }
   | { kind: 'return-pin'; ticket: Ticket }
   | { kind: 'return-confirm'; ticket: Ticket };
@@ -188,8 +189,7 @@ export function Tickets() {
       setGate({ kind: 'qcref', ids: eligible.map((t) => t.id), needsQC, target: bulkStage });
       return;
     }
-    if (!window.confirm(`Move ${eligible.length} ticket${eligible.length !== 1 ? 's' : ''} to "${bulkStage}"?`)) return;
-    void runBulkAdvance(eligible.map((t) => t.id), [], '', bulkStage);
+    setGate({ kind: 'move-confirm', ids: eligible.map((t) => t.id), target: bulkStage });
   }
 
   async function runBulkAdvance(ids: number[], needsQC: number[], qcRef: string, target: string) {
@@ -278,6 +278,24 @@ export function Tickets() {
             className="w-full rounded-md border border-border2 bg-surface px-2.5 py-2 text-xs outline-none focus:border-teal"
           />
         </Modal>
+      )}
+
+      {gate?.kind === 'move-confirm' && (
+        <ConfirmDialog
+          title={`Move ${gate.ids.length} ticket${gate.ids.length !== 1 ? 's' : ''} to "${gate.target}"?`}
+          danger={false}
+          message={
+            <>
+              The selected ticket{gate.ids.length !== 1 ? 's' : ''} will be moved to{' '}
+              <strong>{gate.target}</strong> and progress updated automatically. Each change is recorded in
+              the audit log.
+            </>
+          }
+          confirmLabel="▶ Move tickets"
+          busy={busy}
+          onCancel={() => setGate(null)}
+          onConfirm={() => void runBulkAdvance(gate.ids, [], '', gate.target)}
+        />
       )}
 
       {gate?.kind === 'bulk-status' && (

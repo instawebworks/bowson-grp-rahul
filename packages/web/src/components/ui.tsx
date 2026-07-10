@@ -197,6 +197,59 @@ export function Modal({
   );
 }
 
+/** Styled replacement for window.confirm — a small centred dialog. Stacks above Modal (z-110). */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  danger = true,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-110 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(e) => { e.stopPropagation(); onCancel(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-border bg-surface2 px-4 py-3">
+          {danger && (
+            <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-red/10 text-sm text-red">⚠</span>
+          )}
+          <span className="text-sm font-bold">{title}</span>
+        </div>
+        <div className="px-4 py-4 text-xs leading-relaxed text-text2">{message}</div>
+        <div className="flex justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">
+          <Button onClick={onCancel} autoFocus disabled={busy}>{cancelLabel}</Button>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
+            onClick={onConfirm}
+            disabled={busy}
+            className={danger ? 'border-red bg-red! text-white! hover:bg-red/90!' : ''}
+          >
+            {busy ? 'Working…' : confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FormSection({
   title,
   children,

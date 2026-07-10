@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ORDER_STATS } from '@bowson/shared';
 import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
-import { Button, Card, Content, PageHeader, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, PageHeader, StatusPill, Table } from '../components/ui';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
@@ -78,16 +78,11 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
 
   /** Pending → In Progress releases the order (issues ticket numbers) after a
    * confirm — ported from quickSetOrderStatus. */
+  const [confirmRelease, setConfirmRelease] = useState<Order | null>(null);
   function changeStatus(o: Order, value: string) {
     if (o.status === value) return;
     if (o.status === 'Pending' && value === 'In Progress') {
-      const all = o.tickets ?? [];
-      const unissued = all.filter((t) => t.tn == null).length;
-      const msg = unissued
-        ? `Release order ${o.orderNumber} to production?\n\nThis will issue ${unissued} ticket number${unissued !== 1 ? 's' : ''} and cannot be undone.`
-        : `Release order ${o.orderNumber} to production?\n\n${all.length} ticket${all.length !== 1 ? 's are' : ' is'} already numbered.\n\nThis cannot be undone.`;
-      if (!window.confirm(msg)) return;
-      release.mutate(o.id);
+      setConfirmRelease(o);
       return;
     }
     setStatus.mutate({ id: o.id, status: value });
@@ -139,8 +134,36 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
       rows,
     );
 
+  const releaseUnissued = (confirmRelease?.tickets ?? []).filter((t) => t.tn == null).length;
+  const releaseTotal = (confirmRelease?.tickets ?? []).length;
+
   return (
     <>
+      {confirmRelease && (
+        <ConfirmDialog
+          title={`Release order ${confirmRelease.orderNumber} to production?`}
+          danger={false}
+          message={
+            releaseUnissued ? (
+              <>
+                This will issue <strong>{releaseUnissued} ticket number{releaseUnissued !== 1 ? 's' : ''}</strong> and
+                put the order into production. This cannot be undone.
+              </>
+            ) : (
+              <>
+                {releaseTotal} ticket{releaseTotal !== 1 ? 's are' : ' is'} already numbered. The order moves
+                into production. This cannot be undone.
+              </>
+            )
+          }
+          confirmLabel="Release to production"
+          busy={release.isPending}
+          onCancel={() => setConfirmRelease(null)}
+          onConfirm={() =>
+            release.mutate(confirmRelease.id, { onSettled: () => setConfirmRelease(null) })
+          }
+        />
+      )}
       <PageHeader
         title={title}
         sub={sub ?? `${rows.length} order${rows.length === 1 ? '' : 's'}`}
