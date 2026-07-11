@@ -73,8 +73,10 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
   app.post('/', async (req, reply) => {
     const data = parse(orderInputSchema, req.body, reply);
     if (data === PARSE_FAILED) return;
+    // Deleted orders release their number (matches the partial unique index).
     const dup = unwrap(
-      await db.from('orders').select('id').eq('orderNumber', data.orderNumber).maybeSingle(),
+      await db.from('orders').select('id').eq('orderNumber', data.orderNumber)
+        .is('deletedAt', null).maybeSingle(),
     );
     if (dup) return reply.conflict(`Order number "${data.orderNumber}" already exists`);
     const created = unwrap(await db.from('orders').insert(serializeOrder(data)).select('id').single());

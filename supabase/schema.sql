@@ -69,7 +69,9 @@ create table "moulds" (
 -- ─── Orders ─────────────────────────────────────────────────────────────────
 create table "orders" (
   "id"          bigint generated always as identity primary key,
-  "orderNumber" text not null unique,
+  -- Unique among live orders only (see partial index below) — a soft-deleted
+  -- order releases its number for re-use.
+  "orderNumber" text not null,
   "customerId"  bigint references "customers"("id") on delete set null,
   "siteName"    text,
   "status"      text not null default 'Pending',
@@ -88,6 +90,7 @@ create table "orders" (
   "deletedAt"   timestamptz
 );
 create index on "orders" ("customerId");
+create unique index "orders_orderNumber_live_key" on "orders" ("orderNumber") where "deletedAt" is null;
 
 -- ─── Tickets ────────────────────────────────────────────────────────────────
 create table "tickets" (

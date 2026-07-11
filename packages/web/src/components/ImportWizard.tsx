@@ -252,6 +252,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   const [priceConfirmed, setPriceConfirmed] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [failures, setFailures] = useState<{ orderNumber: string; reason: string }[]>([]);
 
   const cats = catalogue ?? [];
   const existingNums = useMemo(() => new Set((orders ?? []).map((o) => o.orderNumber)), [orders]);
@@ -282,12 +283,15 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   async function runImport() {
     setImporting(true);
     const custList: Customer[] = [...(customers ?? [])];
+    const fails: { orderNumber: string; reason: string }[] = [];
     let okOrders = 0;
     let okTickets = 0;
-    let failed = 0;
 
     for (const o of parsed.orders) {
-      if (existingNums.has(o.orderNumber)) continue;
+      if (existingNums.has(o.orderNumber)) {
+        fails.push({ orderNumber: o.orderNumber, reason: 'Skipped — an order with this number already exists.' });
+        continue;
+      }
       try {
         let customerId: number | null = null;
         if (o.customerName) {
@@ -336,8 +340,8 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
             okTickets += s.ticketsCount / s.qty;
           }
         }
-      } catch {
-        failed++;
+      } catch (e) {
+        fails.push({ orderNumber: o.orderNumber, reason: (e as Error).message });
       }
     }
 
@@ -346,8 +350,9 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     qc.invalidateQueries({ queryKey: ['tickets'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     setImporting(false);
+    setFailures(fails);
     setResult(
-      `Imported ${okOrders} order(s) and ${Math.round(okTickets)} ticket(s).${failed ? ` ${failed} order(s) failed.` : ''}`,
+      `Imported ${okOrders} order(s) and ${Math.round(okTickets)} ticket(s).${fails.length ? ` ${fails.length} order(s) failed.` : ''}`,
     );
   }
 
@@ -381,7 +386,28 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Import Orders" sub="CSV wizard — orders and tickets in one file" onClose={onClose} width="max-w-3xl" footer={footer}>
       {result != null ? (
-        <div className="rounded-lg border border-teal bg-teal-l/40 px-4 py-6 text-center text-sm font-medium text-teal">{result}</div>
+        <>
+          <div
+            className={`rounded-lg border px-4 py-6 text-center text-sm font-medium ${
+              failures.length ? 'border-amber bg-amber-l/40 text-amber' : 'border-teal bg-teal-l/40 text-teal'
+            }`}
+          >
+            {result}
+          </div>
+          {failures.length > 0 && (
+            <div className="mt-3 overflow-hidden rounded-lg border border-border">
+              <div className="border-b border-border bg-surface2 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-text3">
+                Why these orders failed
+              </div>
+              {failures.map((f) => (
+                <div key={f.orderNumber} className="flex items-start gap-3 border-b border-border px-3 py-2 text-xs last:border-0">
+                  <span className="font-bold text-red">{f.orderNumber}</span>
+                  <span className="text-text2">{f.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <>
           {stepBar}
