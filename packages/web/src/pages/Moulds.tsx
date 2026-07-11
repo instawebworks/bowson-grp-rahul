@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isoDate, mondayOf, wcKey } from '@bowson/shared';
 import { useAssignMould, useCatalogue, useMoulds, useTickets, useUpdateMould } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, Content, PageHeader, QueryState, StatusPill, Table } from '../components/ui';
+import { Button, Card, Content, PageHeader, QueryState, Table } from '../components/ui';
 import { MouldForm } from '../components/MouldForm';
 import { CatalogueForm } from '../components/CatalogueForm';
 import { useAuth } from '../lib/auth';
@@ -94,7 +94,7 @@ export function Moulds() {
         </div>
 
         {tab === 'register' && (
-          <RegisterTab rows={rows} isLoading={isLoading} error={error} onEdit={setEditing} />
+          <RegisterTab rows={rows} tickets={liveTickets} isLoading={isLoading} error={error} onEdit={setEditing} />
         )}
         {tab === 'board' && <BoardTab moulds={rows} tickets={liveTickets} />}
         {tab === 'schedule' && <ScheduleTab moulds={rows} tickets={liveTickets} />}
@@ -121,11 +121,13 @@ function MouldStat({ label, value, color, onClick }: { label: string; value: num
 // ─── Register (table + CSV import/export) ────────────────────────────────────
 function RegisterTab({
   rows,
+  tickets,
   isLoading,
   error,
   onEdit,
 }: {
   rows: Mould[];
+  tickets: Ticket[];
   isLoading: boolean;
   error: unknown;
   onEdit: (m: Mould) => void;
@@ -196,23 +198,35 @@ function RegisterTab({
       }
     >
       {importMsg && <div className="border-b border-border bg-teal-l/40 px-3 py-2 text-xs text-teal">{importMsg}</div>}
-      <Table head={['Ref', 'Name', 'Capacity', 'Status', 'Notes', '']}>
-        <QueryState isLoading={isLoading} error={error} colSpan={6} />
+      <Table head={['Ref', 'Name', 'Capacity', 'Status', 'In use', 'Notes', '']}>
+        <QueryState isLoading={isLoading} error={error} colSpan={7} />
         {!isLoading && !error && visible.length === 0 && (
-          <tr><td colSpan={6} className="px-3 py-10 text-center text-xs text-text3">No moulds{filter ? ' match the filter' : ' yet'}.</td></tr>
+          <tr><td colSpan={7} className="px-3 py-10 text-center text-xs text-text3">No moulds{filter ? ' match the filter' : ' yet'}.</td></tr>
         )}
-        {visible.map((m) => (
-          <tr key={m.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => onEdit(m)}>
-            <td className="px-3 py-2 font-semibold">{m.ref}</td>
-            <td className="px-3 py-2">{m.name ?? '—'}</td>
-            <td className="px-3 py-2 tabular-nums text-text2">{m.qty}</td>
-            <td className="px-3 py-2"><StatusPill status={m.status} /></td>
-            <td className="px-3 py-2 text-text2">{m.notes ?? '—'}</td>
-            <td className="px-3 py-2 text-right">
-              <Button onClick={(e) => { e.stopPropagation(); onEdit(m); }}>Edit</Button>
-            </td>
-          </tr>
-        ))}
+        {visible.map((m) => {
+          const occ = occupancy(m, tickets);
+          return (
+            <tr key={m.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => onEdit(m)}>
+              <td className="px-3 py-2 font-semibold">{m.ref}</td>
+              <td className="px-3 py-2">{m.name ?? '—'}</td>
+              <td className="px-3 py-2 tabular-nums text-text2">{m.qty}</td>
+              <td className="px-3 py-2">
+                {/* Live occupancy (Free / Partial / Full / Maintenance), like the board. */}
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+                  style={{ color: OCC_COLOR[occ.status], backgroundColor: `${OCC_COLOR[occ.status]}1a` }}
+                >
+                  {occ.status}
+                </span>
+              </td>
+              <td className="px-3 py-2 tabular-nums text-text2">{occ.active.length}/{m.qty}</td>
+              <td className="px-3 py-2 text-text2">{m.notes ?? '—'}</td>
+              <td className="px-3 py-2 text-right">
+                <Button onClick={(e) => { e.stopPropagation(); onEdit(m); }}>Edit</Button>
+              </td>
+            </tr>
+          );
+        })}
       </Table>
     </Card>
   );

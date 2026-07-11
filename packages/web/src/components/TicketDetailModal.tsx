@@ -205,7 +205,11 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
                     className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
                   >
                     <option value="">— mould —</option>
-                    {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
+                    {(moulds ?? [])
+                      // Hide maintenance moulds (can't take new work); keep the
+                      // currently-assigned one so the selection still displays.
+                      .filter((m) => m.status !== 'Maintenance' || m.id === t.mouldId)
+                      .map((m) => <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>)}
                   </select>
                 )}
                 {CURE_STAGES.includes(t.status) &&

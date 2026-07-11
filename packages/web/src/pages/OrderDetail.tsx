@@ -76,7 +76,7 @@ function MouldCureCell({
 }: {
   ticket: Ticket;
   orderId: number;
-  moulds: { id: number; ref: string }[];
+  moulds: { id: number; ref: string; status: string }[];
   now: number;
 }) {
   const assignMould = useAssignMould(orderId);
@@ -102,9 +102,13 @@ function MouldCureCell({
           className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
         >
           <option value="">— mould —</option>
-          {moulds.map((m) => (
-            <option key={m.id} value={m.id}>{m.ref}</option>
-          ))}
+          {moulds
+            // Maintenance moulds can't take new work — hide them, but keep the
+            // one this ticket is already on visible so the selection still shows.
+            .filter((m) => m.status !== 'Maintenance' || m.id === ticket.mouldId)
+            .map((m) => (
+              <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>
+            ))}
         </select>
       )}
       {showCure &&
@@ -154,7 +158,7 @@ function TicketRow({
 }: {
   ticket: Ticket;
   orderId: number;
-  moulds: { id: number; ref: string }[];
+  moulds: { id: number; ref: string; status: string }[];
   now: number;
   indent?: boolean;
   onEdit?: () => void;
@@ -559,7 +563,7 @@ function FragmentRow({
 }: {
   ticket: Ticket;
   orderId: number;
-  moulds: { id: number; ref: string }[];
+  moulds: { id: number; ref: string; status: string }[];
   now: number;
   parts: Ticket[];
   onEdit?: (ticket: Ticket, parts: Ticket[]) => void;

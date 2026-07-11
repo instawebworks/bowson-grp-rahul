@@ -1614,3 +1614,60 @@ lightweight kb card popup is replaced by the full ticket modal.
 **Next up**
 - Continue the user's manual test pass; fix issues as they're found.
 - Optionally convert the manual test plan (in chat) into `docs/MANUAL_TEST_GUIDE.md`.
+
+---
+
+## 2026-07-11 — Two mould improvements completed (from the feature tracker)
+
+**Done**
+- Cleared the two remaining "Planned" items from the client feature tracker.
+
+**Features added / modified**
+- **Hide maintenance moulds in all dropdowns.** The order-detail Mould/Cure cell
+  (`OrderDetail.tsx`) and the ticket popup (`TicketDetailModal.tsx`) now filter
+  out moulds whose status is Maintenance — but keep the mould a ticket is
+  *already* assigned to visible (labelled "(in maintenance)") so the current
+  selection still shows. Brings these in line with the mould-planner assign list.
+- **Live status in the mould register.** The Register tab (`Moulds.tsx`) now
+  computes live occupancy per mould via the shared `occupancy()` helper and shows
+  a Free / Partial / Full / Maintenance badge (same colours as the board) plus a
+  new "In use" x/qty column, instead of the static Active/Maintenance pill.
+- Updated `docs/Bowson-GRP-Feature-Tracker.xlsx`: both rows moved to the Moulds
+  module, status → Completed, pricing → Included (Summary now 68 Completed /
+  0 Planned).
+- Full-repo typecheck green.
+
+**Next up**
+- Resume manual testing; the despatch phases remain the big outstanding parity work.
+
+---
+
+## 2026-07-11 — Full parity re-verification + client docs refreshed
+
+**Done**
+- Ran a three-way parity re-audit of the CURRENT code against `t-card.html`
+  (three parallel reviewers: Despatch/Invoicing; Orders/Workflow; Board/
+  Planning/Admin). Result: **36/36 feature areas Implemented** — full parity.
+  No missing or stubbed features found.
+- Recorded the verification's minor findings (not defects — the app matches the
+  prototype for each) as optional paid enhancements.
+
+**Findings — optional hardening (parity holds, prototype behaved the same)**
+- Packing-checklist & QC-ref gates are enforced in the UI, not the API (bulk/
+  direct calls can bypass). Family-ready gate IS server-enforced.
+- Bulk advance silently skips server-blocked tickets (reports moved count only).
+- Single ticket delete is not PIN-gated (order delete is).
+- Mould-board cure countdown doesn't tick live (T-Card board does).
+- Global search covers orders + tickets, not customers.
+
+**Docs updated**
+- `docs/CLIENT_FEATURES.md` — mould section now notes maintenance moulds hidden
+  from all assign lists + the live-status register; date → 11 July 2026.
+- `docs/Bowson-GRP-Feature-Summary.docx` — regenerated from the markdown.
+- `docs/Bowson-GRP-Feature-Tracker.xlsx` — 68 Completed / 0 Planned / 5 Proposed
+  (the 5 optional enhancements added under a "Recommended enhancements" group,
+  priced "Quote on request").
+
+**Next up**
+- Commit the mould features + these doc/tracker updates on "Wrap up".
+- Optional: implement any of the 5 recommended enhancements if the client wants them.

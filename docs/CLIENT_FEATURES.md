@@ -1,6 +1,6 @@
 # Bowson GRP — Production System · Feature Summary
 
-*Prepared 9 July 2026*
+*Prepared 11 July 2026*
 
 A complete, modern web application that manages the entire Bowson GRP workflow: taking
 customer orders, planning and manufacturing every slide and part on the shop floor, and
@@ -58,7 +58,8 @@ Ready to Despatch. The system enforces the quality rules automatically:
 ## Mould management
 - **Mould board** grouped into In Use / Available / Maintenance, with one-click assign and unassign.
 - **Automatic progression** — assigning a free mould moves the waiting ticket straight into Gel Coat.
-- **Maintenance awareness** — shows exactly which tickets a broken mould is holding up; one-click "Mark as Active".
+- **Maintenance awareness** — shows exactly which tickets a broken mould is holding up; one-click "Mark as Active". Moulds under maintenance are hidden from every assignment list, so no new work can be booked onto them by mistake.
+- **Live mould register** — every mould shows its real-time status (Free / Partial / Full / Maintenance) and how many slots are in use, alongside reference, capacity and notes.
 - **3-week mould schedule** calendar; **catalogue linking** so future tickets know their mould automatically; **register with CSV import/export** and search.
 
 ## Product catalogue & SKUs
