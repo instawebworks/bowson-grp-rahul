@@ -1717,3 +1717,52 @@ operative-role token · PINs stripped for operatives · manager-only actions
 
 **Next up**
 - Commit on Wrap up. Optional: dark-theme the shared modals on the shop floor.
+
+---
+
+## 2026-07-13 — Client docs & tracker updated for the PIN login / Shop Floor
+
+**Done**
+- `docs/CLIENT_FEATURES.md`: new "Sign-in built for a factory" and "The
+  operative app (shop floor)" sections; security section reworked for
+  PIN-based roles; at-a-glance now 14 modules; date refreshed.
+- `docs/Bowson-GRP-Feature-Summary.docx` regenerated from the markdown.
+- `docs/Bowson-GRP-Feature-Tracker.xlsx`: "Secure login accounts" row
+  replaced by "Factory PIN sign-in"; added "Manager-set operative PINs" +
+  a new "Shop Floor (Operative App)" module (4 rows). Now **73 Completed /
+  0 Planned / 5 Proposed**.
+
+**Next up**
+- Commit on Wrap up.
+
+---
+
+## 2026-07-13 — Consistency sweep: all remaining docs updated for PIN login
+
+**Done**
+- `README.md`: "Enabling authentication" section rewritten for the factory PIN
+  sign-in (manager 1234 / operative PINs / shop-floor view; token flow).
+- `docs/DEPLOY.md`: removed "create users in Supabase" + `create-user` steps;
+  production auth section now documents the PIN flow (change manager PIN after
+  first login, set operative PINs in profiles).
+- `.env.example`: comments for `SUPABASE_JWT_SECRET`, `AUTH_REQUIRED`,
+  `VITE_REQUIRE_AUTH` updated to the PIN-token model.
+- `docs/PROJECT_PLAN.md`: User entity + Phase 6 rows annotated as superseded
+  by the PIN sign-in (July 2026).
+- Deleted obsolete `packages/api/scripts/create-user.ts` + its npm script —
+  it created Supabase auth accounts that can no longer log in.
+- Added an **Optional enhancements — available on request** section to
+  CLIENT_FEATURES.md (+ regenerated docx): the 5 Proposed tracker items now
+  appear in the client doc too, framed as quotable next-phase work.
+- Kept: `lib/supabase.ts` (still used by the realtime board hook) and
+  `MANAGER_PIN` config fallback (matches the login route's default).
+
+**Next up**
+- Commit on Wrap up.
+
+**Decision (later same day):** user does NOT want proposed/upsell items shown to
+the client. Removed the "Optional enhancements" section from CLIENT_FEATURES.md
+(+ docx regenerated) and deleted the 5 "Recommended enhancements" rows from the
+tracker (Proposed status cleared from the Future Enhancements template row too).
+Tracker now: 73 Completed / 0 Planned / 0 Proposed. The 5 ideas remain recorded
+here in the 2026-07-11 verification entry for future quoting.

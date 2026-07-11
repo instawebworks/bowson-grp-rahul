@@ -91,8 +91,10 @@ rewrites, and the function).
    > Web + API share the Vercel domain, so `/api/*` is same-origin — leave
    > `VITE_API_URL` empty (the client defaults to relative `/api`). No CORS needed.
 3. Deploy. Routes: `/api/*` → the function; everything else → the SPA.
-4. One-time: run `pnpm --filter @bowson/api db:setup` and `create-user` locally
-   (they need `DATABASE_URL` / Supabase keys in your local `.env`).
+4. One-time: run `pnpm --filter @bowson/api db:setup` locally (needs
+   `DATABASE_URL` / Supabase keys in your local `.env`). No user accounts to
+   create — sign-in is PIN-based (manager `1234` by default; change it after
+   first login).
 
 **Notes / caveats:**
 - The API runs **serverless** on Vercel (cold starts; each request builds/reuses a
@@ -114,12 +116,17 @@ docker compose up --build
 
 ## Turning on authentication (production)
 
-1. Create users in Supabase (Studio → Authentication).
-2. Set `SUPABASE_JWT_SECRET` (self-hosted: the `JWT_SECRET` from your Supabase env).
-3. Set `AUTH_REQUIRED=true` (API) **and** `VITE_REQUIRE_AUTH=true` (web build arg), redeploy.
-4. Run `supabase/rls.sql` so logged-in users can read + the board gets Realtime.
-5. Assign roles via each user's `app_metadata.role` (`admin` | `manager` | `operative`),
-   or rows in the `users` table. Unset roles default to `admin` (`DEFAULT_ROLE`).
+Sign-in is **PIN-based** (no Supabase user accounts): the login screen lists the
+operatives plus a Manager Login button, and `POST /api/auth/login` issues a JWT.
+
+1. Set `SUPABASE_JWT_SECRET` (self-hosted: the `JWT_SECRET` from your Supabase
+   env) — it signs and verifies the login tokens.
+2. Set `AUTH_REQUIRED=true` (API) **and** `VITE_REQUIRE_AUTH=true` (web build arg), redeploy.
+3. Sign in as **Manager** (PIN `1234`) and immediately change the PIN in
+   *Operatives & Settings → Manager PIN*.
+4. Set each operative's **Login PIN** in their profile (default `1234` until set).
+   Roles are automatic: manager sign-in → full app; operative sign-in →
+   shop-floor view + shop-floor API actions only.
 
 ## Notes
 - Colour-theme images are stored as base64 in Postgres today; moving them to

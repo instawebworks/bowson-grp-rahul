@@ -79,7 +79,7 @@ Relational schema in [`supabase/schema.sql`](../supabase/schema.sql) (run in the
 | **Mould** | ref, capacity (`qty`), status, notes |
 | **Catalogue** (+ Parts, + Hardware) | product templates |
 | **AuditLog** | order/ticket change history |
-| **User** | maps to Supabase auth UUID; role ADMIN / MANAGER / OPERATIVE |
+| **User** | ~~maps to Supabase auth UUID~~ superseded July 2026: PIN sign-in (manager PIN in settings, per-operative `pin` on Operative); roles manager / operative from the login token |
 
 **Conventions:** soft-delete via `deletedAt`; identity columns replace the
 prototype's `nextOid/nextTid/nextTn`; domain statuses stored as **plain strings**
@@ -138,7 +138,7 @@ GET    /api/audit
 | **3. Workflow engine** | 11-stage state machine, COMP/PART roll-ups, progress %, order-status derivation, ticket adding (Step 2), status changes, audit log | Domain module + workflow endpoints + order detail page with add-ticket & status controls | ✅ Done |
 | **4. Kanban + real-time** | T-Card board (by-stage / by-operative), drag-drop → status/assign, time tracking, mould assignment + auto-advance, gel-coat cure timers, live polling | Board + mould auto-advance + cure timers ✅. Remaining: capacity math, true Realtime (→ Phase 6 w/ RLS) | 🟢 Done (Realtime → P6) |
 | **5. Planning + extras** | Global search, activity/audit log, operatives & moulds add/edit, schedule + capacity, order edit, mould planner (register/board/unassigned), CSV import/export | Feature-complete vs prototype | ✅ Done |
-| **6. Auth/roles + deploy** | Supabase Auth, RLS policies, true Realtime board, role gating, **Docker/compose + Coolify deploy guide** ✅ | Production deployment | ✅ Done (ready to host) |
+| **6. Auth/roles + deploy** | ~~Supabase Auth~~ → **PIN sign-in** (July 2026: operative name grid + manager login, per-operative PINs, operative shop-floor view), RLS policies, true Realtime board, role gating, **Docker/compose + Coolify deploy guide** ✅ | Production deployment | ✅ Done (ready to host) |
 
 ---
 

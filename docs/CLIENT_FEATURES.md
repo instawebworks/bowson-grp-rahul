@@ -1,14 +1,15 @@
 # Bowson GRP — Production System · Feature Summary
 
-*Prepared 11 July 2026*
+*Prepared 13 July 2026*
 
 A complete, modern web application that manages the entire Bowson GRP workflow: taking
 customer orders, planning and manufacturing every slide and part on the shop floor, and
 despatching finished work with professional paperwork — all in real time, for the whole
 team at once.
 
-**At a glance:** 13 connected modules · a 10-stage production workflow with built-in
-quality gates · print-ready Delivery Notes & Invoices · live multi-user updates.
+**At a glance:** 14 connected modules · a 10-stage production workflow with built-in
+quality gates · print-ready Delivery Notes & Invoices · a dedicated operative app ·
+live multi-user updates.
 
 ---
 
@@ -72,10 +73,38 @@ Ready to Despatch. The system enforces the quality rules automatically:
 - **CSV export everywhere** — orders, tickets, production lists, moulds, catalogue, hours.
 - **Instant global search** — ticket number, order number or site name from the top bar.
 
+## Sign-in built for a factory
+- **Tap your name, enter your PIN** — the sign-in screen shows every operative as a card
+  (with a live "● On shift" indicator), plus a Manager Login button. No usernames, no
+  email addresses — a big-button PIN pad designed for a shared workshop screen or tablet.
+- **Manager PIN** — the manager signs in with a single PIN (changeable at any time in
+  Settings) and gets the full management application.
+- **Manager-set operative PINs** — each operative has their own PIN, set by the manager
+  in their profile. Signing out returns to the name screen so the next person can tap in.
+
+## The operative app (shop floor)
+When an operative signs in they get their own focused, dark-themed factory view — not the
+management screens — with three tabs:
+- **My Tickets** — the jobs they're clocked onto, each with a **live running timer**,
+  Pause, and a one-tap **✓ Stage Done** that moves the job on and stops the clock. Cure
+  countdowns appear here with a "Ready — Advance" prompt when the cure completes, and a
+  **Completed Today** list totals the hours they've logged.
+- **Available** — the queue of work at *their* allocated stages (from their skills
+  profile). One tap on **Join** assigns them and starts their timer. Shows who else is
+  already working on each job.
+- **Board** — a live, read-only view of the whole production board, stage by stage,
+  showing who's working on what right now.
+- **⏹ End Shift** stops all their timers in one tap; signing out with timers still
+  running asks first so no time is lost.
+
 ## Team, access & security
-- **Secure individual logins** and **roles** — managers control orders, pricing and settings; operatives get the shop-floor actions they need.
-- **Manager PIN** for sensitive overrides (incomplete-assembly despatch, return-to-production, order deletion, unlocking the workshop screen) — changeable in Settings.
-- **Operative profiles** — skills per stage, standard weekly hours, hourly rate, week-by-week availability.
+- **Roles enforced everywhere** — managers control orders, pricing and settings;
+  operatives get exactly the shop-floor actions they need and nothing more (the server
+  refuses manager actions from an operative sign-in, and PINs are never visible to them).
+- **Manager PIN** for sensitive overrides (incomplete-assembly despatch,
+  return-to-production, order deletion, unlocking the workshop screen) — changeable in Settings.
+- **Operative profiles** — skills per stage, standard weekly hours, hourly rate,
+  week-by-week availability, and their sign-in PIN.
 - **Adjustable workflow weightings** driving all capacity maths.
 
 ## Built on a modern, dependable foundation

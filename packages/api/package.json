@@ -8,8 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "db:setup": "tsx scripts/db-setup.ts",
-    "create-user": "tsx scripts/create-user.ts"
+    "db:setup": "tsx scripts/db-setup.ts"
   },
   "dependencies": {
     "@bowson/shared": "workspace:*",
