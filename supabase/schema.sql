@@ -48,6 +48,8 @@ create table "operatives" (
   "dayPattern" double precision[] not null default '{}',
   "dayHrs"     jsonb not null default '{}'::jsonb,
   "payRate"    double precision,
+  -- Shop-floor login PIN, set by the manager (defaults to 1234 when null).
+  "pin"        text,
   "createdAt"  timestamptz not null default now(),
   "updatedAt"  timestamptz not null default now(),
   "deletedAt"  timestamptz

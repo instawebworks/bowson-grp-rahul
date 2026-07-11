@@ -15,6 +15,7 @@ import { searchRoutes } from './routes/search.js';
 import { auditRoutes } from './routes/audit.js';
 import { scheduleRoutes } from './routes/schedule.js';
 import { settingsRoutes } from './routes/settings.js';
+import { authRoutes } from './routes/auth.js';
 
 export async function buildServer() {
   const app = Fastify({
@@ -36,6 +37,7 @@ export async function buildServer() {
     if (!env.AUTH_REQUIRED) return;
     if (req.method === 'OPTIONS' || !req.url.startsWith('/api')) return;
     if (req.url.startsWith('/api/health')) return; // health check stays open
+    if (req.url.startsWith('/api/auth')) return; // login screen needs these before sign-in
     await authenticate(req, reply);
   });
 
@@ -73,6 +75,7 @@ export async function buildServer() {
   app.get('/api/health', health); // reachable when the app is mounted under /api (Vercel)
 
   // Feature routes
+  await app.register(authRoutes, { prefix: '/api/auth' });
   await app.register(dashboardRoutes, { prefix: '/api/dashboard' });
   await app.register(customerRoutes, { prefix: '/api/customers' });
   await app.register(operativeRoutes, { prefix: '/api/operatives' });

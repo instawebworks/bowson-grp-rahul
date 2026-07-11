@@ -20,6 +20,8 @@ export interface Operative {
   dayHrs: Record<string, number> | null;
   /** Hourly pay rate £. */
   payRate: number | null;
+  /** Shop-floor login PIN — visible to managers only (null for operatives / default 1234). */
+  pin?: string | null;
 }
 
 export interface Mould {

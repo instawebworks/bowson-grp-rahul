@@ -22,6 +22,7 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
   const [skills, setSkills] = useState<string[]>(operative?.skills ?? []);
   const [defaultHrs, setDefaultHrs] = useState<number | ''>(operative?.defaultHrs ?? '');
   const [payRate, setPayRate] = useState<number | ''>(operative?.payRate ?? '');
+  const [pin, setPin] = useState(operative?.pin ?? '');
   const [dayPattern, setDayPattern] = useState<number[]>(
     operative?.dayPattern && operative.dayPattern.length >= 7
       ? operative.dayPattern.slice(0, 7)
@@ -44,12 +45,17 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
       setError('Name is required.');
       return;
     }
+    if (pin && !/^\d{4,8}$/.test(pin)) {
+      setError('Login PIN must be 4-8 digits (leave empty for the default 1234).');
+      return;
+    }
     const input: OperativeFormInput = {
       name: name.trim(),
       skills,
       defaultHrs: defaultHrs === '' ? null : Number(defaultHrs),
       dayPattern,
       payRate: payRate === '' ? null : Number(payRate),
+      pin: pin || null,
     };
     try {
       if (isEdit) await update.mutateAsync({ id: operative.id, input });
@@ -104,6 +110,19 @@ export function OperativeForm({ operative, onClose }: { operative?: Operative; o
             placeholder="e.g. 14.50"
           />
         </Field>
+        <div>
+          <Field label="Login PIN">
+            <input
+              className={inputClass}
+              value={pin ?? ''}
+              inputMode="numeric"
+              maxLength={8}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="1234 (default)"
+            />
+          </Field>
+          <div className="mt-0.5 text-[10px] text-text3">4-8 digits — used on the shop-floor sign-in screen.</div>
+        </div>
       </div>
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">

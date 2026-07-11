@@ -17,6 +17,7 @@ import { Schedule } from './pages/Schedule';
 import { Ready } from './pages/Ready';
 import { Despatched } from './pages/Despatched';
 import { InProduction } from './pages/InProduction';
+import { ShopFloor } from './pages/ShopFloor';
 
 export default function App() {
   return (
@@ -28,18 +29,11 @@ export default function App() {
   );
 }
 
-function FullScreen({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-screen items-center justify-center p-6 text-sm text-text3">{children}</div>;
-}
-
 function Gate() {
-  const { required, loading, configured, session } = useAuth();
-  if (required) {
-    if (loading) return <FullScreen>Loading…</FullScreen>;
-    if (!configured)
-      return <FullScreen>Auth is required but Supabase isn’t configured (set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).</FullScreen>;
-    if (!session) return <Login />;
-  }
+  const { required, user } = useAuth();
+  if (required && !user) return <Login />;
+  // Operatives get the shop-floor view (My Tickets / Available / Board) only.
+  if (user?.role === 'operative') return <ShopFloor />;
   return (
     <Routes>
         <Route element={<Layout />}>

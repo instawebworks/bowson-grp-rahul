@@ -1,4 +1,4 @@
-# Bowson GRP — Development Log
+﻿# Bowson GRP — Development Log
 
 A running, day-by-day record of work on the Bowson GRP rebuild. Every working
 session adds an entry; every feature added or modified is recorded here so the
@@ -1671,3 +1671,49 @@ lightweight kb card popup is replaced by the full ticket modal.
 **Next up**
 - Commit the mould features + these doc/tracker updates on "Wrap up".
 - Optional: implement any of the 5 recommended enhancements if the client wants them.
+
+---
+
+## 2026-07-11 — PIN login + operative Shop Floor view (from login_part.html)
+
+**Done**
+- Replaced the email/password (admin) login with the unified PIN login ported
+  from `login_part.html`, and added the operative Shop Floor view. No other
+  features touched.
+
+**Features added / modified**
+- **Login screen** (`pages/Login.tsx`, rewritten): "Who are you?" grid of
+  operative cards (initials, name, ● On shift when a timer is running) +
+  🔐 Manager Login button → PIN pad (dots, numpad, keyboard support, shake on
+  error). Backed by public `GET /api/auth/operatives`.
+- **Auth** — no Supabase accounts. `POST /api/auth/login` verifies the PIN
+  (manager → settings `managerPin`, default 1234, changeable in Operatives &
+  Settings as before; operative → new `operatives.pin`, default 1234) and
+  signs a 30-day HS256 JWT with the same claims shape the API already
+  verifies. Web `lib/auth.tsx` rewritten token-based; `lib/api.ts` sends it.
+- **Operative PINs** — new `pin` column (schema.sql + live migration).
+  Manager sets it in the operative form ("Login PIN", 4-8 digits). PINs are
+  stripped from API reads for non-managers.
+- **Shop Floor view** (`pages/ShopFloor.tsx`, new) — operatives land here and
+  see ONLY: **My Tickets** (active cards with live elapsed timer, Pause,
+  ✓ Stage Done with confirm, also-working chips, Curing section with
+  ready-advance, Completed Today with time logged), **Available** (tickets at
+  their allocated stages — or all production stages if none — grouped by
+  stage, Join → assigns them + starts the timer), **Board** (read-only
+  stage-grouped board highlighting who's working). End Shift stops all their
+  timers; sign-out warns if timers are running. 20s background refresh.
+- Manager experience unchanged (full app, all existing features).
+
+**Verified end-to-end** (live API): public names list · wrong PIN 401 ·
+manager 1234 login · manager sets operative PIN · operative login →
+operative-role token · PINs stripped for operatives · manager-only actions
+403 for operatives · timer start/stop 200. Full typecheck green.
+
+- **Shop-floor dark theme** — restyled the operative view 1:1 to the
+  prototype's sf-mode palette (near-black bg, green accents, icon sign-out,
+  uppercase tabs with green underline/badges, green-bordered active cards).
+- **Manager Log out moved** — removed the sidebar-footer Sign out; a
+  '[→ Log out' button now sits top-right in the global header bar.
+
+**Next up**
+- Commit on Wrap up. Optional: dark-theme the shared modals on the shop floor.

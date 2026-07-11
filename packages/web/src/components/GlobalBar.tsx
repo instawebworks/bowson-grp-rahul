@@ -16,7 +16,7 @@ type Popup = null | 'order' | 'ticket-pin' | 'ticket' | 'import';
  * so the whole app has a single header row (matches the prototype's top bar).
  */
 export function GlobalBar({ actions = true, leading }: { actions?: boolean; leading?: ReactNode }) {
-  const { canManage } = useAuth();
+  const { canManage, user, signOut } = useAuth();
   const [popup, setPopup] = useState<Popup>(null);
 
   return (
@@ -33,6 +33,11 @@ export function GlobalBar({ actions = true, leading }: { actions?: boolean; lead
         </>
       )}
       <SavedIndicator />
+      {user && (
+        <Button onClick={() => signOut()} title={`Signed in as ${user.name}`} className="ml-1">
+          [→ Log out
+        </Button>
+      )}
 
       {popup === 'order' && <OrderForm onClose={() => setPopup(null)} />}
       {popup === 'ticket-pin' && (

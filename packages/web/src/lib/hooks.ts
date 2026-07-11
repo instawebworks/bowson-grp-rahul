@@ -424,6 +424,8 @@ export interface OperativeFormInput {
   dayPattern?: number[];
   dayHrs?: Record<string, number>;
   payRate?: number | null;
+  /** Shop-floor login PIN (4-8 digits, manager-set; null = default 1234). */
+  pin?: string | null;
 }
 
 export function useDeleteOperative() {

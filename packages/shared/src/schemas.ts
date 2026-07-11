@@ -39,6 +39,8 @@ export const operativeInputSchema = z.object({
   dayHrs: z.record(z.number().nonnegative()).optional(),
   /** Hourly pay rate £ (shown on the operative card). */
   payRate: z.number().nonnegative().nullish(),
+  /** Shop-floor login PIN (digits, set by the manager; null = default 1234). */
+  pin: z.string().regex(/^\d{4,8}$/, 'PIN must be 4-8 digits').nullish(),
 });
 export type OperativeInput = z.infer<typeof operativeInputSchema>;
 

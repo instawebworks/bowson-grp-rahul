@@ -1,7 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { NAV } from '../nav';
 import { NavIcon } from './icons';
-import { useAuth } from '../lib/auth';
 import { useOrders, useTickets } from '../lib/hooks';
 import { daysToDeadline } from '../lib/format';
 import logoUrl from '../assets/bowson-logo.jpg';
@@ -83,16 +82,6 @@ function SidebarStats() {
 }
 
 function SidebarFooter() {
-  const { session, signOut } = useAuth();
-  if (session) {
-    return (
-      <div className="border-t border-border px-4 py-2.5">
-        <button onClick={() => void signOut()} className="text-sm font-semibold text-teal hover:underline">
-          Sign out
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="border-t border-border px-4 py-2.5 text-[10px] leading-relaxed text-text3">
       Bowson GRP · rebuild

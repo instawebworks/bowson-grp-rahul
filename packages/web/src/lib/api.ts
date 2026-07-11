@@ -1,14 +1,16 @@
-import { supabase } from './supabase';
-
 // Empty/unset → same-origin relative "/api/…" (Vercel single-project deploy).
 // In dev, .env sets VITE_API_URL=http://localhost:4000.
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
-async function authHeader(): Promise<Record<string, string>> {
-  if (!supabase) return {};
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+/** PIN-login token minted by /api/auth/login (see lib/auth.tsx). */
+function authHeader(): Record<string, string> {
+  try {
+    const s = localStorage.getItem('grp_auth_v1');
+    const token = s ? (JSON.parse(s) as { token?: string }).token : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -16,7 +18,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     // Only declare a JSON body when there actually is one — Fastify rejects an
     // empty body sent with Content-Type: application/json (e.g. DELETE requests).
     ...(options.body != null ? { 'Content-Type': 'application/json' } : {}),
-    ...(await authHeader()),
+    ...authHeader(),
     ...((options.headers as Record<string, string>) ?? {}),
   };
 

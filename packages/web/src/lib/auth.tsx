@@ -1,77 +1,97 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { apiClient } from './api';
+
+/**
+ * PIN-based auth (ported from login_part.html's unified login).
+ * The manager signs in with the manager PIN (changeable in Settings);
+ * operatives sign in with their own manager-set PIN. The API returns a
+ * signed token which every request carries.
+ */
 
 /** Whether the app requires login. Off by default — flip VITE_REQUIRE_AUTH=true. */
 const REQUIRED = import.meta.env.VITE_REQUIRE_AUTH === 'true';
 
+const STORAGE_KEY = 'grp_auth_v1';
+
+export interface AuthUser {
+  role: 'manager' | 'operative';
+  name: string;
+  operativeId: number | null;
+}
+
+interface Stored {
+  token: string;
+  user: AuthUser;
+}
+
+export function storedToken(): string | null {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? (JSON.parse(s) as Stored).token : null;
+  } catch {
+    return null;
+  }
+}
+
+function storedUser(): AuthUser | null {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? (JSON.parse(s) as Stored).user : null;
+  } catch {
+    return null;
+  }
+}
+
 interface AuthContextValue {
-  session: Session | null;
-  loading: boolean;
+  user: AuthUser | null;
   required: boolean;
-  configured: boolean;
-  role: string | null;
-  /** Whether the user may perform manager/admin actions (true when auth is off). */
+  role: 'manager' | 'operative' | null;
+  /** Whether the user may perform manager actions (true when auth is off). */
   canManage: boolean;
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signOut: () => Promise<void>;
+  /** operativeId=null signs in as the manager. */
+  signIn: (operativeId: number | null, pin: string) => Promise<{ error?: string }>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  session: null,
-  loading: true,
+  user: null,
   required: REQUIRED,
-  configured: !!supabase,
   role: null,
   canManage: true,
-  signIn: async () => ({ error: 'not configured' }),
-  signOut: async () => {},
+  signIn: async () => ({ error: 'not ready' }),
+  signOut: () => {},
 });
 
-function roleOf(session: Session | null): string | null {
-  if (!session) return null;
-  const u = session.user as { app_metadata?: { role?: string }; user_metadata?: { role?: string } };
-  return u.app_metadata?.role ?? u.user_metadata?.role ?? null;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(() => storedUser());
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
+  const value = useMemo<AuthContextValue>(() => {
+    const signIn = async (operativeId: number | null, pin: string) => {
+      try {
+        const res = await apiClient.post<Stored>('/api/auth/login', { operativeId, pin });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(res));
+        setUser(res.user);
+        return {};
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+    };
+    const signOut = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      setUser(null);
+    };
+    const role = user?.role ?? null;
+    return {
+      user,
+      required: REQUIRED,
+      role,
+      canManage: !REQUIRED || role === 'manager',
+      signIn,
+      signOut,
+    };
+  }, [user]);
 
-  const signIn = async (email: string, password: string) => {
-    if (!supabase) return { error: 'Supabase is not configured.' };
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return error ? { error: error.message } : {};
-  };
-
-  const signOut = async () => {
-    await supabase?.auth.signOut();
-  };
-
-  const role = roleOf(session);
-  // When auth is off, or the role is unknown (defaults to admin on the server), allow manage.
-  const canManage = !REQUIRED || !role || role === 'admin' || role === 'manager';
-
-  return (
-    <AuthContext.Provider
-      value={{ session, loading, required: REQUIRED, configured: !!supabase, role, canManage, signIn, signOut }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);
