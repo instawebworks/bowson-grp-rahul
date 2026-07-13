@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
-import { generateSku } from '@bowson/shared';
-import { useCatalogue, useCreateCatalogue, useMoulds, useUpdateCatalogue } from '../lib/hooks';
+import { useCreateCatalogue, useMoulds, useUpdateCatalogue } from '../lib/hooks';
 import type { Catalogue } from '../lib/types';
 import { Button, Field, FormSection, Modal, inputClass } from './ui';
 
@@ -20,9 +19,6 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
   const update = useUpdateCatalogue();
   const pending = create.isPending || update.isPending;
   const { data: moulds } = useMoulds();
-  const { data: allCatalogue } = useCatalogue();
-  // Other templates, for the SKU-uniqueness suffix check.
-  const existingForSku = (allCatalogue ?? []).filter((c) => c.id !== catalogue?.id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,16 +126,7 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Twin Lane Wavy Slide" />
           </Field>
           <Field label="SKU">
-            <div className="flex gap-1.5">
-              <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. TLW-2050" />
-              <Button
-                type="button"
-                title="Auto-generate the SKU from the product name"
-                onClick={() => setCode(generateSku(productCode, name, existingForSku))}
-              >
-                ⚙
-              </Button>
-            </div>
+            <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. TLW-2050" />
           </Field>
           <Field label="Sell price £">
             <input type="number" min={0} className={inputClass} value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
