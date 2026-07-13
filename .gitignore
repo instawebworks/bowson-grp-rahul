@@ -26,3 +26,6 @@ packages/api/prisma/*.db
 
 # Word temporary lock files
 ~$*
+
+# internal testing guide — local only, never push to GitHub
+docs/MANUAL_TEST_GUIDE.md
