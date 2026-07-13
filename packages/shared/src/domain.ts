@@ -142,6 +142,11 @@ const READY_OR_DONE = ['10. Ready to Despatch', 'Despatched'];
  * Never auto-resets to Pending — returns the current status if no rule matches.
  */
 export function deriveOrderStatus(current: string, tickets: TicketLike[]): string {
+  // A Pending order is only released explicitly (Review & Advance / status
+  // dropdown), which also issues the ticket numbers. A recompute must never
+  // promote it — a fresh COMP rolls up to "Awaiting Parts (0/n)", which would
+  // otherwise read as in-production the moment the order wizard adds it.
+  if (current === 'Pending') return current;
   const tops = topTickets(tickets);
   if (!tops.length) return current;
   const nonRaw = tops.filter((t) => t.type !== 'RAW');

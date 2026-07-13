@@ -1766,3 +1766,47 @@ the client. Removed the "Optional enhancements" section from CLIENT_FEATURES.md
 tracker (Proposed status cleared from the Future Enhancements template row too).
 Tracker now: 73 Completed / 0 Planned / 0 Proposed. The 5 ideas remain recorded
 here in the 2026-07-11 verification entry for future quoting.
+
+---
+
+## 2026-07-14 — Full manual test guide written
+
+**Done**
+- Removed the inline SKU ⚙ auto-generate button from the product form
+  (beyond-parity addition; committed as 8da33a4).
+- Wrote `docs/MANUAL_TEST_GUIDE.md` — complete manual test script for the whole
+  system in dependency order: Phase 0 sign-in/access control → reference data →
+  orders (incl. release flow + CSV import) → workflow gates (mould auto-advance,
+  cure, COMP roll-up, QC ref, packing checklist, family gate) → T-Card board →
+  despatch/documents → Shop Floor operative pass → planning (schedule overrides,
+  dashboard, mould planner) → search/multi-user → cross-cutting checks. Each
+  step has an "Expect:" line; includes clean-up steps, known-behaviour list
+  (so testers don't file parity behaviours as bugs) and a bug-report template.
+  ~2-3h for a full pass; all data prefixed TEST-.
+
+**Next up**
+- User runs the full test pass from the guide; fix anything found; commit on Wrap up.
+
+---
+
+## 2026-07-14 — Test-pass bug #1: orders with assemblies skipped Pending
+
+**Symptom** (found via MANUAL_TEST_GUIDE 2.1): creating an order with an
+assembly left it **In Progress** instead of **Pending**, with no ticket
+numbers issued — the pending-release flow never happened.
+
+**Cause:** `recomputeOrder` runs after every ticket add (the prototype's
+`autoOrderStatus` was never called from the order wizard). A fresh COMP rolls
+up to "Awaiting Parts (0/n)", which `deriveOrderStatus` counted as
+in-production → silently promoted Pending → In Progress, bypassing
+`backfillOrderTns` (numbers are only issued on explicit release/status change).
+Tickets added *after* the flip got numbers, earlier ones didn't — mixed state.
+
+**Fix:** `deriveOrderStatus` (shared/domain.ts) now never moves an order out
+of **Pending** — only the explicit release / status dropdown does (which also
+issues numbers). Verified E2E: create order → add assembly → still Pending →
+release → In Progress + all tns issued. Repaired TEST-9001 in the DB (back to
+Pending, mixed tns cleared) so the test pass can continue at step 2.2.
+
+**Next up**
+- Continue the manual test pass; fix issues as found.
