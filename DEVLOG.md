@@ -1864,3 +1864,21 @@ choice. Previously the only feedback was a briefly-disabled control.
 
 **Next up**
 - Continue the manual test pass.
+
+---
+
+## 2026-07-14 — Verified the manual test guide (Phases 4-9) against the code
+
+Fact-checked every remaining step in MANUAL_TEST_GUIDE.md against the actual
+implementation (4 parallel reviewers for Phases 4-7; I did 8-9). Result: the
+guide was ~90% accurate — the app behaves correctly throughout; the fixes were
+label/location/colour precision so a tester isn't sent to the wrong place:
+- P4 s4: live timer total is in the operative COLUMN HEADER (not a "footer").
+- P5 s2/s3: despatch button is "📦 Despatch N selected"; partial note banner
+  reads "⚠ Partial Despatch" (ref PDN-), not all-caps; s5 reprint = "🖨 Copy Invoice".
+- P6 s3: card button order is Details, Pause, Stage Done; s8 = "✓ Ready — Advance".
+- P7 s1: >=16 weeks; s2: day=0 shows RED "Off" (amber is a non-zero override);
+  s4: "⭳ Export N weeks to CSV"; s5: exact blocker trigger conditions; s6: Moulds
+  opens on the Mould Board tab.
+- Phases 8-9 all accurate (no native popups, audit covers release/override/cure,
+  5 CSV exports, 5 PIN gates). Guide is local-only (gitignored); no code change.
