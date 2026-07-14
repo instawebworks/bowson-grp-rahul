@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { stageIndex, GRP_STAGES } from '@bowson/shared';
 import { useChangeTicketStatus, useTickets } from '../lib/hooks';
-import { Button, Card, Content, PageHeader, ProgressBar, QueryState, StatusPill, Table } from '../components/ui';
+import { Button, Card, Content, PageHeader, ProgressBar, QueryState, Spinner, StatusPill, Table } from '../components/ui';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { useGatedStatusChange } from '../components/TicketStatusSelect';
@@ -40,7 +40,7 @@ function RowActions({ ticket, allPartsDone, isComp }: { ticket: Ticket; allParts
         disabled={idx <= 0 || reverse.isPending}
         onClick={() => idx > 0 && reverse.mutate({ ticketId: ticket.id, status: GRP_STAGES[idx - 1]! })}
       >
-        ◀
+        {reverse.isPending ? <Spinner size={11} /> : '◀'}
       </Button>
       {isComp && !allPartsDone ? (
         <span className="px-1.5 py-1 text-[9px] text-amber">Parts pending</span>
@@ -54,7 +54,7 @@ function RowActions({ ticket, allPartsDone, isComp }: { ticket: Ticket; allParts
             if (ns) requestChange(ns);
           }}
         >
-          ▶
+          {isPending ? <Spinner size={11} /> : '▶'}
         </Button>
       )}
     </span>

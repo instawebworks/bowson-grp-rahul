@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ORDER_STATS } from '@bowson/shared';
 import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
-import { Button, Card, ConfirmDialog, Content, PageHeader, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, PageHeader, Saving, StatusPill, Table } from '../components/ui';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
@@ -238,15 +238,17 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                   </td>
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     {inlineStatus && canManage ? (
-                      <select
-                        value={o.status}
-                        disabled={release.isPending}
-                        onChange={(e) => changeStatus(o, e.target.value)}
-                        className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
-                      </select>
+                      <Saving busy={release.isPending || setStatus.isPending}>
+                        <select
+                          value={o.status}
+                          disabled={release.isPending || setStatus.isPending}
+                          onChange={(e) => changeStatus(o, e.target.value)}
+                          className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                        </select>
+                      </Saving>
                     ) : (
                       <StatusPill status={o.status} />
                     )}

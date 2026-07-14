@@ -311,3 +311,28 @@ export function ProgressBar({ pct }: { pct: number }) {
     </div>
   );
 }
+
+/** Small inline spinner — shown next to an inline control while its change saves. */
+export function Spinner({ className = '', size = 14 }: { className?: string; size?: number }) {
+  return (
+    <svg className={`animate-spin ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" role="status" aria-label="Saving">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Wraps an inline control (dropdown/button) with a "saving…" indicator.
+ * While `busy`, the control dims and a spinner sits beside it — the feedback
+ * these table dropdowns lacked (the change round-trips to the server, which
+ * may derive a different result, e.g. mould assign → auto-advance).
+ */
+export function Saving({ busy, children }: { busy: boolean; children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={busy ? 'pointer-events-none opacity-60' : undefined}>{children}</span>
+      {busy && <Spinner className="flex-none text-teal" />}
+    </span>
+  );
+}

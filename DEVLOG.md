@@ -1828,3 +1828,39 @@ release) → "Ticket — <detail>"; deleted ticket (not in the order any more) �
 
 **Next up**
 - Continue the manual test pass.
+
+---
+
+## 2026-07-14 — Test-pass check: spec/materials confirmation (NOT a bug)
+
+Tester found no confirmation when jumping a ticket Spec Required → Assembly via
+the order-detail **dropdown**. Investigated: correct behaviour. The
+"confirm spec reviewed / materials available" gate exists on the **T-Card board
+drag** only (Board.tsx applyMove / WARN_STAGES), exactly as in the prototype
+(`kbApplyMove`, t-card.html:6146) — the status **dropdown** was never gated in
+either app (prototype `applyStatChange` has no such check). No code change.
+Fixed the local MANUAL_TEST_GUIDE: step 3.1.2 now expects a free dropdown
+change; the confirmation is tested on the board in Phase 4 (new step 2a).
+
+---
+
+## 2026-07-14 — Inline "saving…" feedback on the workflow dropdowns
+
+**Why:** these table dropdowns round-trip to the server (which may *derive* a
+different result than picked — mould assign → auto-advance, status → COMP
+roll-up), so optimistic UI would flash the wrong value. A loader is the honest
+choice. Previously the only feedback was a briefly-disabled control.
+
+**Done**
+- New `Spinner` + `Saving` wrapper in `components/ui.tsx` (dims the control and
+  shows a small teal spinner beside it while its mutation is pending).
+- Applied to every inline workflow control: ticket status dropdown
+  (`TicketStatusSelect` — order detail + In Production), mould / cure-timer /
+  cure-confirm (`OrderDetail` MouldCureCell and `TicketDetailModal`), In
+  Production advance/reverse buttons (spinner replaces the arrow), and the
+  All Orders order-status dropdown (now also reflects `setStatus.isPending`,
+  not just release). Controls stay disabled while saving to prevent double-fire.
+- Web-only; full web typecheck green; clean HMR.
+
+**Next up**
+- Continue the manual test pass.

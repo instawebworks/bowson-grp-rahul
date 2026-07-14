@@ -14,7 +14,7 @@ import {
   useToggleTimer,
 } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
-import { Button, Modal, ProgressBar, StatusPill } from '../components/ui';
+import { Button, Modal, ProgressBar, Saving, StatusPill } from '../components/ui';
 import { TicketStatusSelect } from './TicketStatusSelect';
 import { EditTicketModal } from './EditTicketModal';
 import { SpecModal } from './SpecModal';
@@ -199,36 +199,45 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
             {!isRaw && !isComp && (MOULD_STAGES.includes(t.status) || CURE_STAGES.includes(t.status)) && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {MOULD_STAGES.includes(t.status) && (
-                  <select
-                    value={t.mouldId ?? ''}
-                    onChange={(e) => assignMould.mutate({ ticketId, mouldId: e.target.value ? Number(e.target.value) : null })}
-                    className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
-                  >
-                    <option value="">— mould —</option>
-                    {(moulds ?? [])
-                      // Hide maintenance moulds (can't take new work); keep the
-                      // currently-assigned one so the selection still displays.
-                      .filter((m) => m.status !== 'Maintenance' || m.id === t.mouldId)
-                      .map((m) => <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>)}
-                  </select>
+                  <Saving busy={assignMould.isPending}>
+                    <select
+                      value={t.mouldId ?? ''}
+                      disabled={assignMould.isPending}
+                      onChange={(e) => assignMould.mutate({ ticketId, mouldId: e.target.value ? Number(e.target.value) : null })}
+                      className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+                    >
+                      <option value="">— mould —</option>
+                      {(moulds ?? [])
+                        // Hide maintenance moulds (can't take new work); keep the
+                        // currently-assigned one so the selection still displays.
+                        .filter((m) => m.status !== 'Maintenance' || m.id === t.mouldId)
+                        .map((m) => <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>)}
+                    </select>
+                  </Saving>
                 )}
                 {CURE_STAGES.includes(t.status) &&
                   (cure ? (
-                    <button
-                      onClick={() => confirmCure.mutate({ ticketId })}
-                      className={`rounded px-1.5 py-1 text-[11px] font-semibold ${cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'}`}
-                    >
-                      {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
-                    </button>
+                    <Saving busy={confirmCure.isPending}>
+                      <button
+                        onClick={() => confirmCure.mutate({ ticketId })}
+                        disabled={confirmCure.isPending}
+                        className={`rounded px-1.5 py-1 text-[11px] font-semibold ${cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'}`}
+                      >
+                        {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
+                      </button>
+                    </Saving>
                   ) : (
-                    <select
-                      value=""
-                      onChange={(e) => setCure.mutate({ ticketId, mins: Number(e.target.value), targetStage: nextStage(t.status) ?? undefined })}
-                      className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
-                    >
-                      <option value="">+ cure timer…</option>
-                      {CURE_PRESETS.map((m) => <option key={m} value={m}>{fmtCureMins(m)}</option>)}
-                    </select>
+                    <Saving busy={setCure.isPending}>
+                      <select
+                        value=""
+                        disabled={setCure.isPending}
+                        onChange={(e) => setCure.mutate({ ticketId, mins: Number(e.target.value), targetStage: nextStage(t.status) ?? undefined })}
+                        className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
+                      >
+                        <option value="">+ cure timer…</option>
+                        {CURE_PRESETS.map((m) => <option key={m} value={m}>{fmtCureMins(m)}</option>)}
+                      </select>
+                    </Saving>
                   ))}
               </div>
             )}

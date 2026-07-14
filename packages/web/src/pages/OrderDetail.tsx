@@ -28,7 +28,7 @@ import {
   useUpdateOrder,
 } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, Saving, StatusPill, Table } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
 import { TicketStatusSelect } from '../components/TicketStatusSelect';
 import { EditTicketModal } from '../components/EditTicketModal';
@@ -93,54 +93,60 @@ function MouldCureCell({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col items-start gap-1">
       {showMould && (
-        <select
-          value={ticket.mouldId ?? ''}
-          disabled={assignMould.isPending}
-          onChange={(e) => assignMould.mutate({ ticketId: ticket.id, mouldId: e.target.value ? Number(e.target.value) : null })}
-          className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
-        >
-          <option value="">— mould —</option>
-          {moulds
-            // Maintenance moulds can't take new work — hide them, but keep the
-            // one this ticket is already on visible so the selection still shows.
-            .filter((m) => m.status !== 'Maintenance' || m.id === ticket.mouldId)
-            .map((m) => (
-              <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>
-            ))}
-        </select>
+        <Saving busy={assignMould.isPending}>
+          <select
+            value={ticket.mouldId ?? ''}
+            disabled={assignMould.isPending}
+            onChange={(e) => assignMould.mutate({ ticketId: ticket.id, mouldId: e.target.value ? Number(e.target.value) : null })}
+            className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+          >
+            <option value="">— mould —</option>
+            {moulds
+              // Maintenance moulds can't take new work — hide them, but keep the
+              // one this ticket is already on visible so the selection still shows.
+              .filter((m) => m.status !== 'Maintenance' || m.id === ticket.mouldId)
+              .map((m) => (
+                <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>
+              ))}
+          </select>
+        </Saving>
       )}
       {showCure &&
         (cure ? (
-          <button
-            onClick={() => confirmCure.mutate({ ticketId: ticket.id })}
-            disabled={confirmCure.isPending}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-              cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'
-            }`}
-            title="Confirm cure complete (advances to the next stage)"
-          >
-            {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
-          </button>
+          <Saving busy={confirmCure.isPending}>
+            <button
+              onClick={() => confirmCure.mutate({ ticketId: ticket.id })}
+              disabled={confirmCure.isPending}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'
+              }`}
+              title="Confirm cure complete (advances to the next stage)"
+            >
+              {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
+            </button>
+          </Saving>
         ) : (
-          <select
-            value=""
-            disabled={setCure.isPending}
-            onChange={(e) =>
-              setCure.mutate({
-                ticketId: ticket.id,
-                mins: Number(e.target.value),
-                targetStage: nextStage(ticket.status) ?? undefined,
-              })
-            }
-            className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
-          >
-            <option value="">+ cure timer…</option>
-            {CURE_PRESETS.map((m) => (
-              <option key={m} value={m}>{fmtCureMins(m)}</option>
-            ))}
-          </select>
+          <Saving busy={setCure.isPending}>
+            <select
+              value=""
+              disabled={setCure.isPending}
+              onChange={(e) =>
+                setCure.mutate({
+                  ticketId: ticket.id,
+                  mins: Number(e.target.value),
+                  targetStage: nextStage(ticket.status) ?? undefined,
+                })
+              }
+              className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
+            >
+              <option value="">+ cure timer…</option>
+              {CURE_PRESETS.map((m) => (
+                <option key={m} value={m}>{fmtCureMins(m)}</option>
+              ))}
+            </select>
+          </Saving>
         ))}
     </div>
   );

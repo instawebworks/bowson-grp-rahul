@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { GRP_STAGES, RAW_STAGES, type FamilyNotReady } from '@bowson/shared';
 import { useChangeTicketStatus, useUpdateTicket } from '../lib/hooks';
 import { ApiError } from '../lib/api';
-import { Button, Modal } from './ui';
+import { Button, Modal, Saving } from './ui';
 import { ManagerPinGate } from './ManagerPinGate';
 import { PackingChecklistModal } from './PackingChecklistModal';
 
@@ -177,17 +177,19 @@ export function TicketStatusSelect({ ticket, className }: { ticket: StatusTicket
   return (
     <>
       {gateUi}
-      <select
-        value={(stages as readonly string[]).includes(ticket.status) ? ticket.status : ''}
-        disabled={isPending}
-        onChange={(e) => requestChange(e.target.value)}
-        className={className ?? 'rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal'}
-      >
-        {!(stages as readonly string[]).includes(ticket.status) && <option value="">{ticket.status}</option>}
-        {stages.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
+      <Saving busy={isPending}>
+        <select
+          value={(stages as readonly string[]).includes(ticket.status) ? ticket.status : ''}
+          disabled={isPending}
+          onChange={(e) => requestChange(e.target.value)}
+          className={className ?? 'rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal'}
+        >
+          {!(stages as readonly string[]).includes(ticket.status) && <option value="">{ticket.status}</option>}
+          {stages.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </Saving>
     </>
   );
 }
