@@ -545,7 +545,7 @@ export function OrderDetail() {
           </div>
         )}
 
-        <OrderAudit orderId={orderId} />
+        <OrderAudit orderId={orderId} orderNumber={order.orderNumber} tickets={tickets} />
       </Content>
     </>
   );
@@ -687,9 +687,28 @@ function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTick
   );
 }
 
-function OrderAudit({ orderId }: { orderId: number }) {
+function OrderAudit({
+  orderId,
+  orderNumber,
+  tickets,
+}: {
+  orderId: number;
+  orderNumber: string;
+  tickets: Ticket[];
+}) {
   const { data } = useOrderAudit(orderId);
   if (!data || data.length === 0) return null;
+
+  // Label an audit row by what the user recognises — ticket number + name, or
+  // the order number — never the raw database id (see #382 vs #304 report).
+  const label = (entityType: string, entityId: number) => {
+    if (entityType === 'order') return `Order ${orderNumber}`;
+    const t = tickets.find((x) => x.id === entityId);
+    if (!t) return `Ticket #${entityId}`; // deleted ticket — id is all we have
+    const num = t.tn != null ? `Ticket #${t.tn}` : 'Ticket';
+    return t.detail ? `${num} — ${t.detail}` : num;
+  };
+
   return (
     <div className="mt-4">
       <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Activity</div>
@@ -699,8 +718,8 @@ function OrderAudit({ orderId }: { orderId: number }) {
             <span className="whitespace-nowrap text-text3">
               {new Date(a.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
-            <span className="capitalize text-text3">{a.entityType} #{a.entityId}</span>
-            <span className="text-text2">{a.field}</span>
+            <span className="font-medium text-text2">{label(a.entityType, a.entityId)}</span>
+            <span className="text-text3">{a.field}</span>
             {a.field === 'status' && a.toValue ? (
               <span className="flex items-center gap-1">
                 {a.fromValue && <StatusPill status={a.fromValue} />}→<StatusPill status={a.toValue} />

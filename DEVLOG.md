@@ -1810,3 +1810,21 @@ Pending, mixed tns cleared) so the test pass can continue at step 2.2.
 
 **Next up**
 - Continue the manual test pass; fix issues as found.
+
+---
+
+## 2026-07-14 — Test-pass fix #2: Activity log showed database IDs, not ticket numbers
+
+**Symptom** (found via test pass): the order-detail Activity log labelled a
+status change "Ticket #382" while the same ticket showed as **#304** in the
+table — confusing and unsearchable (382 is the DB row id; 304 is the `tn`).
+
+**Fix:** `OrderAudit` (OrderDetail.tsx) now maps each entry's `entityId` to a
+user-facing label: ticket rows show **"Ticket #<tn> — <detail>"**, order rows
+show **"Order <orderNumber>"**. Fallbacks: un-numbered ticket (changed before
+release) → "Ticket — <detail>"; deleted ticket (not in the order any more) →
+"Ticket #<id>". Web-only change. Verified against live TEST-9001 audit data:
+"ticket #382" → "Ticket #304 — test A", "order #77" → "Order TEST-9001".
+
+**Next up**
+- Continue the manual test pass.
