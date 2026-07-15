@@ -78,6 +78,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
           onClose={onClose}
           onX={() => setShowAbandon(true)}
           width="max-w-2xl"
+          side="right"
         >
           <OrderStep2
             orderId={created.id}
@@ -119,6 +120,7 @@ export function OrderForm({ onClose }: { onClose: () => void }) {
         sub="Enter order details"
         onClose={onClose}
         width="max-w-2xl"
+        side="right"
         footer={
           <>
             <Button onClick={onClose}>Cancel</Button>

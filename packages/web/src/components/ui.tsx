@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { statusStyle } from '../lib/format';
 import { GlobalBar } from './GlobalBar';
 
@@ -164,6 +164,7 @@ export function Modal({
   children,
   footer,
   width = 'max-w-xl',
+  side = 'center',
 }: {
   title: string;
   sub?: string;
@@ -173,7 +174,44 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   width?: string;
+  /** 'center' = centred dialog (default); 'right' = slide-in drawer (prototype). */
+  side?: 'center' | 'right';
 }) {
+  // Slide the right drawer in on mount (prototype's .drawer transition).
+  const [shown, setShown] = useState(side !== 'right');
+  useEffect(() => {
+    if (side !== 'right') return;
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, [side]);
+
+  const panel = (
+    <>
+      <div className="flex flex-none items-start justify-between border-b border-border bg-surface2 px-4 py-3">
+        <div>
+          <div className="text-sm font-bold">{title}</div>
+          {sub && <div className="text-[11px] text-text3">{sub}</div>}
+        </div>
+        <button onClick={onX ?? onClose} className="text-text3 hover:text-text" aria-label="Close">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">{children}</div>
+      {footer && <div className="flex flex-none justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">{footer}</div>}
+    </>
+  );
+
+  if (side === 'right') {
+    return (
+      <div className="fixed inset-0 z-100 bg-black/30" onMouseDown={onClose}>
+        <div
+          className={`fixed inset-y-0 right-0 flex h-full w-full ${width} flex-col border-l border-border bg-surface shadow-2xl transition-transform duration-200 ease-out ${shown ? 'translate-x-0' : 'translate-x-full'}`}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {panel}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-100 flex items-start justify-center overflow-y-auto bg-black/30 p-4 pt-[5vh]"
@@ -183,15 +221,7 @@ export function Modal({
         className={`flex max-h-[90vh] w-full ${width} flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-none items-start justify-between border-b border-border bg-surface2 px-4 py-3">
-          <div>
-            <div className="text-sm font-bold">{title}</div>
-            {sub && <div className="text-[11px] text-text3">{sub}</div>}
-          </div>
-          <button onClick={onX ?? onClose} className="text-text3 hover:text-text" aria-label="Close">✕</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">{children}</div>
-        {footer && <div className="flex flex-none justify-end gap-2 border-t border-border bg-surface2 px-4 py-3">{footer}</div>}
+        {panel}
       </div>
     </div>
   );

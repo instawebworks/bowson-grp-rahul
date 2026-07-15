@@ -1924,3 +1924,14 @@ under their COMP. The rebuild indented only the number (↳) and detail cells, s
 checkboxes stayed left-aligned. Now the checkbox cell is indented for child rows
 on **All Tickets** (Tickets.tsx) and the **Order detail** ticket table
 (OrderDetail.tsx TicketRow). Styling only.
+
+---
+
+## 2026-07-15 — New Order form opens as a right-side drawer (match t-card.html)
+
+The prototype opens forms in a right-side slide-in drawer; our + Order form was
+a centred modal. Added a `side="right"` variant to the shared `Modal`
+(slides in from the right, full-height, left border; default stays 'center' so
+all other modals are unchanged) and applied it to New Order Step 1 + Step 2.
+The small Abandon confirm and nested + New Customer stay centred (as in the
+prototype). Styling only.
