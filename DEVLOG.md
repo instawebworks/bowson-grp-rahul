@@ -1959,3 +1959,57 @@ location) pattern:
 **Next up**
 - Optional: convert the other detail/forms (Edit Order, Ticket detail,
   Operative settings) to the same drawer for full parity, if wanted.
+
+## 2026-07-15 — Order & ticket drawers rebuilt to match t-card.html 1:1
+
+Side-by-side review against the prototype surfaced three drawer mismatches;
+fixed each to exact parity.
+
+**Done**
+- Order drawer **body** rewritten to the prototype's `openOrderDetail` layout:
+  "Order status" + "Details" sections, a "⚖ Bulk advance tickets" panel, and
+  COMP-grouped ticket blocks (RAW/MADE/COMP) with per-ticket ‹ step-back /
+  › advance, ✎ edit, checkboxes and spec chips; constituent PARTs nest inside
+  their COMP. Type badges read as friendly labels (Slide (Assembly) / Slide /
+  Raw Stock / Part). Removed the dead flat-table components
+  (StatusSelect / MouldCureCell / TicketRow / FragmentRow / Meta).
+- Order drawer **bottom** replaced with the prototype's "Update order status"
+  section: status dropdown + Save, Edit details, conditional Despatch Note
+  (Despatched / Ready to Despatch), Delete. Audit heading → "Audit".
+- Ticket detail **rebuilt as a right-side drawer** (was a centred modal),
+  matching `openTicketDetail`: Production-stages 1–11 stepper (done/current
+  dots), read-only Ticket-details grid + Detail + Specification, Constituent
+  parts with per-part ‹ ›/Edit and the "N part(s) in progress — COMP blocked"
+  note (clicking a part navigates within the same drawer), and an "Update"
+  section (COMP auto / RAW Ordered·Received / MADE·PART select+Save+‹ ›) with
+  Edit + Delete. Our operative assign/timers, mould/cure and audit kept below.
+- Web typecheck + production build both green.
+
+**Features added / modified**
+- `OrderDetail.tsx` — new body (Section/DField/AdvanceButtons/PartRow/
+  OrderTicketBlock) + "Update order status" section; Suggested Schedule and
+  "+ Add to catalogue" removed from the drawer (they live in the new-order
+  wizard / catalogue page, matching the prototype).
+- `TicketDetailModal.tsx` — full drawer rebuild (StageStepper, StageAdvance,
+  PartRow, UpdateControls; in-drawer part navigation via internal view id).
+- `ui.tsx` — `Modal` title/sub widened to `ReactNode` so the header can carry
+  the type badge.
+- `index.css` — added the missing light-tint theme tokens (amber-l, red-l,
+  comp-l, made-l, raw-l, teal-ll). Side benefit: the app-wide amber warning
+  banners that were rendering with no background now show correctly.
+
+**Decisions**
+- Ticket detail confirmed as a right-side drawer (not a modal), and our extra
+  operative/timer + mould/cure controls kept as additions below the prototype's
+  sections (both confirmed with the user).
+- "+ Add part" (adding a part to an existing assembly) left unwired: the
+  `POST /orders/:id/tickets` API has no `compParentId`, so there is no backend
+  path yet — button omitted rather than shipping a dead control.
+
+**Next up**
+- If wanted: convert the Edit Order and Edit Ticket modals to the same drawer
+  styling for full parity.
+- If the "+ Add part" flow is wanted, extend the add-ticket API with
+  `compParentId` + a small add-part form.
+- Branch housekeeping: this work is on `v1`; decide whether to merge into
+  `main`.
