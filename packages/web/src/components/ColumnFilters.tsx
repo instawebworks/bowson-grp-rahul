@@ -27,7 +27,12 @@ export function useColumnFilters() {
   return { filters, set, match, clear, hasFilters };
 }
 
-/** Filter input rendered inside a <th>. */
+/**
+ * Filter input rendered inside a <th>. Ported from the prototype's `.cf-input`:
+ * it's disguised as the plain column header (transparent, bold, uppercase, grey)
+ * so the header row looks clean, and only reveals a box on hover / focus, or
+ * turns teal once a filter is applied. The placeholder is the column name.
+ */
 export function FilterInput({
   col,
   placeholder,
@@ -40,15 +45,21 @@ export function FilterInput({
   onChange: (col: string, val: string) => void;
 }) {
   const active = !!filters[col];
+  const base = 'w-full min-w-16 cursor-text rounded px-1.5 py-1 outline-none';
   return (
     <input
       value={filters[col] ?? ''}
       placeholder={placeholder}
+      title={`Filter by ${placeholder}`}
       onChange={(e) => onChange(col, e.target.value)}
       onClick={(e) => e.stopPropagation()}
-      className={`w-full min-w-16 rounded border bg-surface px-1.5 py-1 text-[10px] font-normal normal-case tracking-normal outline-none placeholder:text-text3 focus:border-teal ${
-        active ? 'border-teal bg-teal-l/40' : 'border-border2'
-      }`}
+      className={
+        active
+          ? `${base} border border-teal bg-teal-l/50 text-xs font-semibold normal-case tracking-normal text-text`
+          : `${base} border border-transparent bg-transparent text-[10px] font-bold uppercase tracking-wide text-text3 placeholder:text-text3` +
+            ' hover:border-border hover:bg-surface2 hover:text-text2' +
+            ' focus:border-teal focus:bg-surface focus:text-xs focus:font-normal focus:normal-case focus:tracking-normal focus:text-text'
+      }
     />
   );
 }

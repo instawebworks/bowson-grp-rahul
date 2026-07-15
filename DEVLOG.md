@@ -1901,3 +1901,15 @@ label/location/colour precision so a tester isn't sent to the wrong place:
 
 **Next up**
 - Continue the manual test pass.
+
+---
+
+## 2026-07-15 — Column filters: disguise as headers to match the prototype
+
+The per-column filter inputs (Orders / Tickets / In Production) rendered as
+visible bordered boxes, unlike t-card.html where `.cf-input` is disguised as the
+plain header label (transparent/bold/uppercase/grey) and only reveals a box on
+hover/focus. Restyled `FilterInput` (ColumnFilters.tsx) to match: default looks
+like the column label, hover shows a faint box, focus becomes a real input,
+active turns teal. Filtering behaviour unchanged; single component, applies to
+all three tables.
