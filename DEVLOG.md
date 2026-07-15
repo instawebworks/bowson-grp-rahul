@@ -1913,3 +1913,14 @@ hover/focus. Restyled `FilterInput` (ColumnFilters.tsx) to match: default looks
 like the column label, hover shows a faint box, focus becomes a real input,
 active turns teal. Filtering behaviour unchanged; single component, applies to
 all three tables.
+
+---
+
+## 2026-07-15 — Indent PART-row checkboxes to nest under their parent
+
+The prototype indents a child (PART) row's first cell — the checkbox — by 28px
+(`.comp-child td:first-child { padding-left: 28px }`) so parts nest visually
+under their COMP. The rebuild indented only the number (↳) and detail cells, so
+checkboxes stayed left-aligned. Now the checkbox cell is indented for child rows
+on **All Tickets** (Tickets.tsx) and the **Order detail** ticket table
+(OrderDetail.tsx TicketRow). Styling only.

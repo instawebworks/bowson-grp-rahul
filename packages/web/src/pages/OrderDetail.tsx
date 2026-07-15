@@ -173,7 +173,8 @@ function TicketRow({
 }) {
   return (
     <tr className="border-b border-border last:border-0">
-      <td className="w-8 px-3 py-2">
+      {/* PART rows indent the checkbox cell to nest under their parent (prototype parity). */}
+      <td className={`py-2 pr-3 ${indent ? 'pl-8' : 'w-8 pl-3'}`}>
         {onToggle && ticket.type !== 'RAW' && (
           <input type="checkbox" className="accent-teal" checked={!!selected} onChange={(e) => onToggle(e.target.checked)} />
         )}

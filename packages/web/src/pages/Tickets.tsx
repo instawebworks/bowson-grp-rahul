@@ -471,7 +471,9 @@ export function Tickets() {
                   className={`cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40 ${child ? 'bg-surface2/40' : ''}`}
                   onClick={() => setDetailId(t.id)}
                 >
-                  <td className="w-8 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  {/* PART rows indent the checkbox cell to nest under their parent
+                      (prototype: .comp-child td:first-child { padding-left: 28px }). */}
+                  <td className={`py-2 pr-3 ${child ? 'pl-8' : 'w-8 pl-3'}`} onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="accent-teal" checked={selected.has(t.id)} onChange={(e) => toggle(t.id, e.target.checked)} />
                   </td>
                   <td className="px-3 py-2 tabular-nums text-text3">{child ? '↳ ' : ''}#{t.tn ?? 'TBC'}</td>
