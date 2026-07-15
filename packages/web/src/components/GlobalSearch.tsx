@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSearch } from '../lib/hooks';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { StatusPill } from './ui';
 
 /**
@@ -10,6 +11,7 @@ import { StatusPill } from './ui';
  */
 export function GlobalSearch() {
   const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -33,6 +35,12 @@ export function GlobalSearch() {
     setOpen(false);
     setQ('');
     navigate(path);
+  }
+
+  function goOrder(orderId: number) {
+    setOpen(false);
+    setQ('');
+    openOrder(orderId);
   }
 
   return (
@@ -67,7 +75,7 @@ export function GlobalSearch() {
                   {orders.map((o) => (
                     <button
                       key={`o-${o.id}`}
-                      onClick={() => go(`/orders/${o.id}`)}
+                      onClick={() => goOrder(o.id)}
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-teal-l/40"
                     >
                       <span className="font-semibold">{o.orderNumber}</span>
@@ -83,7 +91,7 @@ export function GlobalSearch() {
                   {tickets.map((t) => (
                     <button
                       key={`t-${t.id}`}
-                      onClick={() => go(`/orders/${t.orderId}`)}
+                      onClick={() => goOrder(t.orderId)}
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-teal-l/40"
                     >
                       <span className="w-8 shrink-0 tabular-nums text-text3">{t.tn ?? '—'}</span>

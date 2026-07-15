@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { familyReadyCheck, stageIndex, type FamilyNotReady } from '@bowson/shared';
 import { useDespatchTickets, useOverrideDespatch, useTickets } from '../lib/hooks';
 import { Button, Card, Content, Modal, PageHeader, QueryState, Table } from '../components/ui';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { buildDespatchHtml, openDocument } from '../lib/documents';
@@ -45,6 +46,7 @@ export function Ready() {
   const despatch = useDespatchTickets();
   const override = useOverrideDespatch();
   const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [gate, setGate] = useState<Gate | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -336,7 +338,7 @@ export function Ready() {
                         <button className="font-bold text-teal hover:underline" onClick={() => setDetailId(t.id)}>#{t.tn ?? 'TBC'}</button>
                       </td>
                       <td className="px-3 py-2">
-                        <button className="font-medium text-teal hover:underline" onClick={() => navigate(`/orders/${t.orderId}`)}>
+                        <button className="font-medium text-teal hover:underline" onClick={() => openOrder(t.orderId)}>
                           {t.order?.orderNumber ?? '—'}
                         </button>
                       </td>
@@ -387,7 +389,7 @@ export function Ready() {
                         {parent ? `#${parent.tn ?? 'TBC'} ${parent.detail.slice(0, 30)}` : '—'}
                       </td>
                       <td className="px-3 py-2">
-                        <button className="font-medium text-teal hover:underline" onClick={() => navigate(`/orders/${t.orderId}`)}>
+                        <button className="font-medium text-teal hover:underline" onClick={() => openOrder(t.orderId)}>
                           {t.order?.orderNumber ?? '—'}
                         </button>
                       </td>

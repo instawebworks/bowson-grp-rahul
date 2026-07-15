@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useCustomers, useOrders } from '../lib/hooks';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { Button, Content, Modal, PageHeader, StatusPill, inputClass } from '../components/ui';
 import { CustomerForm } from '../components/CustomerForm';
 import { useAuth } from '../lib/auth';
@@ -22,7 +22,7 @@ function CustomerDetail({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   return (
     <Modal
       title={customer.name}
@@ -60,7 +60,7 @@ function CustomerDetail({
           {orders.map((o) => (
             <button
               key={o.id}
-              onClick={() => { onClose(); navigate(`/orders/${o.id}`); }}
+              onClick={() => { onClose(); openOrder(o.id); }}
               className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-xs last:border-0 hover:bg-teal-l/40"
             >
               <span className="font-bold text-teal">{o.orderNumber}</span>

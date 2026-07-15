@@ -196,7 +196,48 @@ function TicketRow({
   );
 }
 
-export function OrderDetail() {
+/** Right-side drawer frame for the order detail (prototype's order drawer). */
+function OrderDrawerFrame({
+  title,
+  sub,
+  actions,
+  onClose,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  actions?: React.ReactNode;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className="fixed inset-0 z-100 bg-black/30" onMouseDown={onClose}>
+      <div
+        className={`fixed inset-y-0 right-0 flex h-full w-full max-w-[880px] flex-col border-l border-border bg-surface shadow-2xl transition-transform duration-200 ease-out ${shown ? 'translate-x-0' : 'translate-x-full'}`}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-none items-start justify-between gap-3 border-b border-border bg-surface2 px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold">{title}</div>
+            {sub && <div className="truncate text-[11px] text-text3">{sub}</div>}
+          </div>
+          <div className="flex flex-none flex-wrap items-center justify-end gap-1.5">
+            {actions}
+            <button onClick={onClose} className="ml-1 text-lg leading-none text-text3 hover:text-text" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const { id } = useParams();
   const orderId = Number(id);
   const { data: order, isLoading, error } = useOrder(orderId);
@@ -287,18 +328,28 @@ export function OrderDetail() {
     startBulk(moves, `Advance ${moves.length} ticket${moves.length !== 1 ? 's' : ''} one stage`);
   }
 
-  if (isLoading) return <><PageHeader title="Order" /><Content><div className="text-xs text-text3">Loading…</div></Content></>;
-  if (error || !order)
-    return (
-      <>
-        <PageHeader title="Order" />
-        <Content>
-          <div className="rounded-lg border border-dashed border-border2 bg-surface p-6 text-xs text-text3">
-            Could not load order — {(error as Error)?.message ?? 'not found'}. <Link to="/orders" className="text-teal">Back to orders</Link>
-          </div>
-        </Content>
-      </>
+  const closeDrawer = () => navigate(-1);
+
+  if (isLoading) {
+    const loading = <div className="text-xs text-text3">Loading…</div>;
+    return asDrawer ? (
+      <OrderDrawerFrame title="Order" onClose={closeDrawer}>{loading}</OrderDrawerFrame>
+    ) : (
+      <><PageHeader title="Order" /><Content>{loading}</Content></>
     );
+  }
+  if (error || !order) {
+    const err = (
+      <div className="rounded-lg border border-dashed border-border2 bg-surface p-6 text-xs text-text3">
+        Could not load order — {(error as Error)?.message ?? 'not found'}. <Link to="/orders" className="text-teal">Back to orders</Link>
+      </div>
+    );
+    return asDrawer ? (
+      <OrderDrawerFrame title="Order" onClose={closeDrawer}>{err}</OrderDrawerFrame>
+    ) : (
+      <><PageHeader title="Order" /><Content>{err}</Content></>
+    );
+  }
 
   const tickets = order.tickets ?? [];
   const tops = tickets.filter((t) => t.compParentId == null);
@@ -315,6 +366,141 @@ export function OrderDetail() {
     const dDate = ts.find((t) => t.despatchDate)?.despatchDate ?? new Date().toISOString().slice(0, 10);
     openDocument(buildDespatchHtml(ts, dDate, false));
   }
+
+  const actions = (
+    <>
+      {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
+        <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
+      )}
+      {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
+      {canManage && <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>}
+      {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
+      {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
+    </>
+  );
+
+  const body = (
+    <>
+      <div className="mb-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        <Meta label="Status" value={<StatusPill status={order.status} />} />
+        <Meta label="Customer ref" value={order.siteName ?? '—'} />
+        <Meta
+          label="Deadline"
+          value={
+            <span className={orderOverdue ? 'font-bold text-red' : ''}>
+              {fmtDate(order.deadline)}{orderOverdue ? ' ⚠ overdue' : ''}
+            </span>
+          }
+        />
+        <Meta label="Target W/C" value={order.wc ?? '—'} />
+        <Meta label="Despatch" value={order.despatch ?? '—'} />
+        <Meta label="Resin" value={order.resinType} />
+        <Meta label="Value" value={money(order.value)} />
+        <Meta label="Progress" value={<div className="pt-1"><ProgressBar pct={orderPct} /></div>} />
+      </div>
+      {order.notes && (
+        <div className="mb-4 rounded-lg bg-surface2 px-3 py-2 text-xs"><span className="text-text3">Notes:</span> {order.notes}</div>
+      )}
+
+      {/* Saved packing checklist (ported from the order drawer's 📦 panel) */}
+      {(order.packingChecklist?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-lg border border-border bg-surface px-3.5 py-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-xs font-bold">📦 Packing Hardware</span>
+            <span className="text-[10px] text-text3">
+              {order.packingChecklist!.filter((h) => h.checked).length}/{order.packingChecklist!.length} picked
+            </span>
+          </div>
+          {order.packingChecklist!.map((h, i) => (
+            <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
+              <span className={h.checked ? 'text-teal' : 'text-text3'}>{h.checked ? '✓' : '○'}</span>
+              <span className="flex-1">{h.name}</span>
+              <span className="tabular-nums text-text2">×{h.qty}</span>
+              {h.notes && <span className="text-[10px] italic text-text3">{h.notes}</span>}
+            </div>
+          ))}
+          {order.packingNotes && (
+            <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-text2">{order.packingNotes}</div>
+          )}
+        </div>
+      )}
+
+      <Card
+        title={`Tickets (${tickets.length})`}
+        actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
+      >
+        {canManage && bulkSel.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-teal bg-teal-l px-3.5 py-2">
+            <span className="text-xs font-bold text-teal">{bulkSel.size} selected</span>
+            <label className="flex cursor-pointer items-center gap-1 text-[11px] text-text2">
+              <input
+                type="checkbox"
+                className="accent-teal"
+                checked={tickets.filter((t) => t.type !== 'RAW').every((t) => bulkSel.has(t.id))}
+                onChange={(e) =>
+                  setBulkSel(e.target.checked ? new Set(tickets.filter((t) => t.type !== 'RAW').map((t) => t.id)) : new Set())
+                }
+              />
+              Select all
+            </label>
+            <Button variant="primary" disabled={bulkBusy} onClick={bulkAdvanceOne}>→ Advance one stage</Button>
+            <select
+              value={bulkStage}
+              onChange={(e) => setBulkStage(e.target.value)}
+              className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
+            >
+              <option value="">— Move to stage —</option>
+              {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <Button disabled={!bulkStage || bulkBusy} onClick={bulkAdvance}>Move to stage</Button>
+            <Button className="ml-auto" onClick={() => setBulkSel(new Set())}>✕ Clear</Button>
+          </div>
+        )}
+        <Table head={['', 'TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
+          {tops.length === 0 && (
+            <tr>
+              <td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">
+                No tickets yet — click “+ Add ticket” to add items (Step 2).
+              </td>
+            </tr>
+          )}
+          {tops.map((t) => (
+            <FragmentRow
+              key={t.id}
+              ticket={t}
+              orderId={orderId}
+              moulds={moulds ?? []}
+              now={now}
+              parts={t.type === 'COMP' ? partsOf(t.id) : []}
+              onEdit={canManage ? (ticket, parts) => setEditTicket({ ticket, parts }) : undefined}
+              bulkSel={canManage ? bulkSel : undefined}
+              onBulkToggle={
+                canManage
+                  ? (tid, checked) =>
+                      setBulkSel((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(tid); else next.delete(tid);
+                        return next;
+                      })
+                  : undefined
+              }
+            />
+          ))}
+        </Table>
+      </Card>
+
+      {canManage && <SuggestSchedulePanel order={order} orderTickets={tickets} />}
+
+      {order.themeImage && (
+        <div className="mt-4">
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Colour theme</div>
+          <img src={order.themeImage} alt="Colour theme" className="max-h-56 rounded-lg border border-border" />
+        </div>
+      )}
+
+      <OrderAudit orderId={orderId} orderNumber={order.orderNumber} tickets={tickets} />
+    </>
+  );
 
   return (
     <>
@@ -413,147 +599,25 @@ export function OrderDetail() {
           {deleteOrder.isError && <div className="mt-2 text-[11px] text-red">Delete failed — {(deleteOrder.error as Error).message}</div>}
         </Modal>
       )}
-      <PageHeader
-        title={`Order ${order.orderNumber}`}
-        sub={order.customer?.name ?? undefined}
-        actions={
-          <>
-            <Link to="/orders"><Button>← All Orders</Button></Link>
-            {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
-              <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
-            )}
-            {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
-            {canManage && <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>}
-            {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
-            {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
-          </>
-        }
-      />
-      <Content>
-        <div className="mb-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-          <Meta label="Status" value={<StatusPill status={order.status} />} />
-          <Meta label="Customer ref" value={order.siteName ?? '—'} />
-          <Meta
-            label="Deadline"
-            value={
-              <span className={orderOverdue ? 'font-bold text-red' : ''}>
-                {fmtDate(order.deadline)}{orderOverdue ? ' ⚠ overdue' : ''}
-              </span>
-            }
-          />
-          <Meta label="Target W/C" value={order.wc ?? '—'} />
-          <Meta label="Despatch" value={order.despatch ?? '—'} />
-          <Meta label="Resin" value={order.resinType} />
-          <Meta label="Value" value={money(order.value)} />
-          <Meta
-            label="Progress"
-            value={<div className="pt-1"><ProgressBar pct={orderPct} /></div>}
-          />
-        </div>
-        {order.notes && (
-          <div className="mb-4 rounded-lg bg-surface2 px-3 py-2 text-xs"><span className="text-text3">Notes:</span> {order.notes}</div>
-        )}
-
-        {/* Saved packing checklist (ported from the order drawer's 📦 panel) */}
-        {(order.packingChecklist?.length ?? 0) > 0 && (
-          <div className="mb-4 rounded-lg border border-border bg-surface px-3.5 py-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-xs font-bold">📦 Packing Hardware</span>
-              <span className="text-[10px] text-text3">
-                {order.packingChecklist!.filter((h) => h.checked).length}/{order.packingChecklist!.length} picked
-              </span>
-            </div>
-            {order.packingChecklist!.map((h, i) => (
-              <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
-                <span className={h.checked ? 'text-teal' : 'text-text3'}>{h.checked ? '✓' : '○'}</span>
-                <span className="flex-1">{h.name}</span>
-                <span className="tabular-nums text-text2">×{h.qty}</span>
-                {h.notes && <span className="text-[10px] italic text-text3">{h.notes}</span>}
-              </div>
-            ))}
-            {order.packingNotes && (
-              <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-text2">{order.packingNotes}</div>
-            )}
-          </div>
-        )}
-
-        <Card
-          title={`Tickets (${tickets.length})`}
-          actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
+      {asDrawer ? (
+        <OrderDrawerFrame
+          title={`Order ${order.orderNumber}`}
+          sub={order.customer?.name ?? undefined}
+          onClose={closeDrawer}
+          actions={actions}
         >
-          {canManage && bulkSel.size > 0 && (
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-teal bg-teal-l px-3.5 py-2">
-              <span className="text-xs font-bold text-teal">{bulkSel.size} selected</span>
-              <label className="flex cursor-pointer items-center gap-1 text-[11px] text-text2">
-                <input
-                  type="checkbox"
-                  className="accent-teal"
-                  checked={tickets.filter((t) => t.type !== 'RAW').every((t) => bulkSel.has(t.id))}
-                  onChange={(e) =>
-                    setBulkSel(e.target.checked ? new Set(tickets.filter((t) => t.type !== 'RAW').map((t) => t.id)) : new Set())
-                  }
-                />
-                Select all
-              </label>
-              <Button variant="primary" disabled={bulkBusy} onClick={bulkAdvanceOne}>→ Advance one stage</Button>
-              <select
-                value={bulkStage}
-                onChange={(e) => setBulkStage(e.target.value)}
-                className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
-              >
-                <option value="">— Move to stage —</option>
-                {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <Button disabled={!bulkStage || bulkBusy} onClick={bulkAdvance}>Move to stage</Button>
-              <Button className="ml-auto" onClick={() => setBulkSel(new Set())}>✕ Clear</Button>
-            </div>
-          )}
-          <Table head={['', 'TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
-            {tops.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">
-                  No tickets yet — click “+ Add ticket” to add items (Step 2).
-                </td>
-              </tr>
-            )}
-            {tops.map((t) => (
-              <FragmentRow
-                key={t.id}
-                ticket={t}
-                orderId={orderId}
-                moulds={moulds ?? []}
-                now={now}
-                parts={t.type === 'COMP' ? partsOf(t.id) : []}
-                onEdit={canManage ? (ticket, parts) => setEditTicket({ ticket, parts }) : undefined}
-                bulkSel={canManage ? bulkSel : undefined}
-                onBulkToggle={
-                  canManage
-                    ? (tid, checked) =>
-                        setBulkSel((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.add(tid); else next.delete(tid);
-                          return next;
-                        })
-                    : undefined
-                }
-              />
-            ))}
-          </Table>
-        </Card>
-
-        {canManage && (
-          <SuggestSchedulePanel order={order} orderTickets={tickets} />
-        )}
-
-        {order.themeImage && (
-          <div className="mt-4">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Colour theme</div>
-            <img src={order.themeImage} alt="Colour theme" className="max-h-56 rounded-lg border border-border" />
-          </div>
-        )}
-
-        <OrderAudit orderId={orderId} orderNumber={order.orderNumber} tickets={tickets} />
-      </Content>
+          {body}
+        </OrderDrawerFrame>
+      ) : (
+        <>
+          <PageHeader
+            title={`Order ${order.orderNumber}`}
+            sub={order.customer?.name ?? undefined}
+            actions={<><Link to="/orders"><Button>← All Orders</Button></Link>{actions}</>}
+          />
+          <Content>{body}</Content>
+        </>
+      )}
     </>
   );
 }

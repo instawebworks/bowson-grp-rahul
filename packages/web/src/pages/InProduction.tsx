@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { stageIndex, GRP_STAGES } from '@bowson/shared';
 import { useChangeTicketStatus, useTickets } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, QueryState, Spinner, StatusPill, Table } from '../components/ui';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { useGatedStatusChange } from '../components/TicketStatusSelect';
@@ -67,6 +68,7 @@ function RowActions({ ticket, allPartsDone, isComp }: { ticket: Ticket; allParts
 export function InProduction() {
   const { data, isLoading, error } = useTickets();
   const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const [detailId, setDetailId] = useState<number | null>(null);
   const cf = useColumnFilters();
 
@@ -167,7 +169,7 @@ export function InProduction() {
                   <td className="px-3 py-2 tabular-nums text-text3">{t.type === 'PART' ? '↳ ' : ''}#{t.tn ?? 'TBC'}</td>
                   <td className="px-3 py-2"><TypeBadge type={t.type} /></td>
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <button className="font-medium text-teal hover:underline" onClick={() => navigate(`/orders/${t.orderId}`)}>
+                    <button className="font-medium text-teal hover:underline" onClick={() => openOrder(t.orderId)}>
                       {o?.orderNumber ?? '—'}
                     </button>
                   </td>

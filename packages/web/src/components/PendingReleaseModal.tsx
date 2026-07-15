@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useReleaseOrder } from '../lib/hooks';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { Button, Modal } from './ui';
 import type { Order } from '../lib/types';
 
@@ -11,7 +11,7 @@ import type { Order } from '../lib/types';
  */
 export function PendingReleaseModal({ orders, onClose }: { orders: Order[]; onClose: () => void }) {
   const release = useReleaseOrder();
-  const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const [confirming, setConfirming] = useState<Order | null>(null);
 
   if (confirming) {
@@ -77,7 +77,7 @@ export function PendingReleaseModal({ orders, onClose }: { orders: Order[]; onCl
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <Button onClick={() => { onClose(); navigate(`/orders/${o.id}`); }}>View order</Button>
+                <Button onClick={() => { onClose(); openOrder(o.id); }}>View order</Button>
                 <Button variant="primary" onClick={() => setConfirming(o)}>Release to production</Button>
               </div>
             </div>

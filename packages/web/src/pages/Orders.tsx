@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth';
 import { Button, Card, ConfirmDialog, Content, PageHeader, Saving, StatusPill, Table } from '../components/ui';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
 import { ItemBadges, itemCounts } from '../components/ItemBadges';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import type { Order } from '../lib/types';
@@ -59,6 +60,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
   const setStatus = useSetOrderStatus();
   const release = useReleaseOrder();
   const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const { canManage } = useAuth();
 
   /** Pending → In Progress releases the order (issues ticket numbers) after a
@@ -196,7 +198,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
               const despatched = o.status === 'Despatched' || o.status === 'Completed';
               const cd = countdown(o.deadline);
               return (
-                <tr key={o.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => navigate(`/orders/${o.id}`)}>
+                <tr key={o.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => openOrder(o.id)}>
                   <td className="px-3 py-2">
                     <span className="font-bold text-teal">{o.orderNumber}</span>
                     {overdue && <span className="ml-1.5 rounded bg-red/10 px-1 py-0.5 text-[9px] font-bold text-red">+{-days!}d</span>}
@@ -244,7 +246,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                   </td>
                   <td className="px-3 py-2 text-[11px] font-semibold tabular-nums">{money(o.value)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <Button onClick={(e) => { e.stopPropagation(); navigate(`/orders/${o.id}`); }}>View</Button>
+                    <Button onClick={(e) => { e.stopPropagation(); openOrder(o.id); }}>View</Button>
                   </td>
                 </tr>
               );

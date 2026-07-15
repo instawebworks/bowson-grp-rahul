@@ -1,11 +1,12 @@
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useSearch } from '../lib/hooks';
 import { Card, Content, PageHeader, StatusPill, Table, inputClass } from '../components/ui';
+import { useOpenOrder } from '../lib/useOpenOrder';
 
 export function Search() {
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
-  const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const { data, isLoading } = useSearch(q);
 
   return (
@@ -34,7 +35,7 @@ export function Search() {
                   <tr
                     key={o.id}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
-                    onClick={() => navigate(`/orders/${o.id}`)}
+                    onClick={() => openOrder(o.id)}
                   >
                     <td className="px-3 py-2 font-semibold">{o.orderNumber}</td>
                     <td className="px-3 py-2 text-text2">{o.siteName ?? '—'}</td>
@@ -53,7 +54,7 @@ export function Search() {
                   <tr
                     key={t.id}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
-                    onClick={() => navigate(`/orders/${t.orderId}`)}
+                    onClick={() => openOrder(t.orderId)}
                   >
                     <td className="px-3 py-2 tabular-nums text-text3">{t.tn ?? '—'}</td>
                     <td className="max-w-[260px] truncate px-3 py-2">{t.detail}</td>

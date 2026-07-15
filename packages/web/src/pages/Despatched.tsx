@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useCompleteOrder, useOrders } from '../lib/hooks';
+import { useOpenOrder } from '../lib/useOpenOrder';
 import { Button, Card, Content, PageHeader, QueryState, StatusPill, Table } from '../components/ui';
 import { buildDespatchHtml, buildInvoiceHtml, openDocument, type DocTicket } from '../lib/documents';
 import type { Order } from '../lib/types';
@@ -21,7 +21,7 @@ const docDate = (ts: DocTicket[], o: Order) =>
 export function Despatched() {
   const { data, isLoading, error } = useOrders();
   const complete = useCompleteOrder();
-  const navigate = useNavigate();
+  const openOrder = useOpenOrder();
 
   const rows = useMemo(() => {
     return (data ?? [])
@@ -80,7 +80,7 @@ export function Despatched() {
                 <tr
                   key={o.id}
                   className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
-                  onClick={() => navigate(`/orders/${o.id}`)}
+                  onClick={() => openOrder(o.id)}
                 >
                   <td className="px-3 py-2"><span className="font-bold text-teal">{o.orderNumber}</span></td>
                   <td className="max-w-40 truncate px-3 py-2 text-text2">{o.siteName ?? '—'}</td>

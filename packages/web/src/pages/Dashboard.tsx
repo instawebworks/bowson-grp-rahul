@@ -11,6 +11,7 @@ import {
 } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { ItemBadges } from "../components/ItemBadges";
+import { useOpenOrder } from "../lib/useOpenOrder";
 
 const stageShort = (s: string) => {
   const i = (GRP_STAGES as readonly string[]).indexOf(s);
@@ -21,6 +22,7 @@ export function Dashboard() {
   const { data, isLoading } = useDashboard();
   const { data: sched } = useSchedule();
   const navigate = useNavigate();
+  const openOrder = useOpenOrder();
   const f = (n: number | undefined) =>
     isLoading || n === undefined ? "…" : String(n);
 
@@ -86,7 +88,7 @@ export function Dashboard() {
               note: b.mouldNotes || "In maintenance",
             }))}
             onOpenPlanner={() => navigate("/moulds")}
-            onOpenOrder={(oid) => navigate(`/orders/${oid}`)}
+            onOpenOrder={(oid) => openOrder(oid)}
           />
         )}
         {(data?.blockers.noMould.length ?? 0) > 0 && (
@@ -100,7 +102,7 @@ export function Dashboard() {
               note: "Assign a mould",
             }))}
             onOpenPlanner={() => navigate("/moulds")}
-            onOpenOrder={(oid) => navigate(`/orders/${oid}`)}
+            onOpenOrder={(oid) => openOrder(oid)}
           />
         )}
 
@@ -116,7 +118,7 @@ export function Dashboard() {
                   <tr
                     key={o.id}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
-                    onClick={() => navigate(`/orders/${o.id}`)}
+                    onClick={() => openOrder(o.id)}
                   >
                     <td className="px-3 py-2 font-bold text-teal">
                       {o.orderNumber}
@@ -158,7 +160,7 @@ export function Dashboard() {
                 <tr
                   key={o.id}
                   className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
-                  onClick={() => navigate(`/orders/${o.id}`)}
+                  onClick={() => openOrder(o.id)}
                 >
                   <td className="px-3 py-2 font-semibold">{o.orderNumber}</td>
                   <td className="px-3 py-2 text-text2">{o.customer ?? "—"}</td>

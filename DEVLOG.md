@@ -1935,3 +1935,27 @@ a centred modal. Added a `side="right"` variant to the shared `Modal`
 all other modals are unchanged) and applied it to New Order Step 1 + Step 2.
 The small Abandon confirm and nested + New Customer stay centred (as in the
 prototype). Styling only.
+
+---
+
+## 2026-07-15 — Order detail opens as a right-side drawer (match t-card.html)
+
+The prototype shows the order detail as a right-side drawer over the orders
+list; ours was a full routed page. Implemented the modal-route (background
+location) pattern:
+- `OrderDetail` gains an `asDrawer` prop — renders its header/body inside a
+  full-height right drawer (slide-in, dimmed backdrop, close ✕ + action
+  buttons) instead of PageHeader + Content. Body/actions extracted so both
+  modes share one render.
+- `App.tsx`: when navigation carries a `backgroundLocation`, the origin page
+  renders underneath and `<OrderDetail asDrawer />` overlays it; a direct
+  visit / refresh with no background falls back to the full-page route
+  (still URL-shareable).
+- New `useOpenOrder()` hook passes the current location as background; the ~13
+  order-open call sites (All Orders, Dashboard, Search, GlobalSearch, Ready,
+  In Production, Despatched, Customers, PendingReleaseModal) now use it.
+- Close = navigate(-1) back to the origin page. Web typecheck green.
+
+**Next up**
+- Optional: convert the other detail/forms (Edit Order, Ticket detail,
+  Operative settings) to the same drawer for full parity, if wanted.

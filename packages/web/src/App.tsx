@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useLocation, type Location } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -31,11 +31,20 @@ export default function App() {
 
 function Gate() {
   const { required, user } = useAuth();
+  const location = useLocation();
   if (required && !user) return <Login />;
   // Operatives get the shop-floor view (My Tickets / Available / Board) only.
   if (user?.role === 'operative') return <ShopFloor />;
+
+  // Order detail opens as a right-side drawer over the page you came from
+  // (prototype parity): navigating with a `backgroundLocation` renders that
+  // page underneath and the order as a drawer. A direct visit / refresh with
+  // no background falls back to the full-page order route (URL-shareable).
+  const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+
   return (
-    <Routes>
+    <>
+      <Routes location={backgroundLocation ?? location}>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="board" element={<Board />} />
@@ -53,6 +62,12 @@ function Gate() {
           <Route path="search" element={<Search />} />
           <Route path="*" element={<PagePlaceholder title="Not found" />} />
         </Route>
-    </Routes>
+      </Routes>
+      {backgroundLocation && (
+        <Routes>
+          <Route path="orders/:id" element={<OrderDetail asDrawer />} />
+        </Routes>
+      )}
+    </>
   );
 }
