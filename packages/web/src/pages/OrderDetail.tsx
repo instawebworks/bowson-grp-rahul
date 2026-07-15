@@ -1,41 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  GRP_STAGES,
-  HRS_PER_DAY,
-  LIVE_STATUSES,
-  STAGE_HRS_REMAINING,
-  formatWc,
-  isoDate,
-  nextStage,
-  nextWeeks,
-  stageIndex,
-  wcForDeadline,
-  wcKey,
-  weekCapacityFor,
-} from '@bowson/shared';
+import { GRP_STAGES, ORDER_STATS, nextStage, stageIndex, type OrderStatus } from '@bowson/shared';
 import {
   useChangeTicketStatus,
   useDeleteOrder,
-  useOperatives,
   useOrder,
   useOrderAudit,
-  useSettings,
-  useTickets,
   useUpdateOrder,
 } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, Saving, StatusPill } from '../components/ui';
+import { Button, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, Saving, StatusPill } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
 import { useGatedStatusChange } from '../components/TicketStatusSelect';
 import { EditTicketModal } from '../components/EditTicketModal';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { EditOrderForm } from '../components/EditOrderForm';
-import { CatalogueForm } from '../components/CatalogueForm';
 import { buildDespatchHtml, openDocument } from '../lib/documents';
-import { computeSuggestedSchedule } from '../lib/suggestSchedule';
 import { useAuth } from '../lib/auth';
 import { fmtDate, money } from '../lib/format';
 import type { Order, Ticket } from '../lib/types';
@@ -253,7 +235,6 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [showCatalogue, setShowCatalogue] = useState(false);
   const [deleteFlow, setDeleteFlow] = useState<'pin' | 'confirm' | null>(null);
   const [editTicket, setEditTicket] = useState<{ ticket: Ticket; parts: Ticket[] } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -268,6 +249,13 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const [qcRefInput, setQcRefInput] = useState('');
   const qc = useQueryClient();
   const { canManage } = useAuth();
+  const updateOrder = useUpdateOrder(orderId);
+  // Draft for the "Update order status" select — synced whenever the order's
+  // server status changes (initial load or after a save).
+  const [statusDraft, setStatusDraft] = useState<OrderStatus>('Pending');
+  useEffect(() => {
+    if (order?.status) setStatusDraft(order.status as OrderStatus);
+  }, [order?.status]);
 
   /** Move each ticked ticket to a target stage; tickets moving into Packing
    * without a QC ref get the shared reference (ported from odAdvanceToStage). */
@@ -485,18 +473,31 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
         )}
       </Section>
 
-      {canManage && <SuggestSchedulePanel order={order} orderTickets={tickets} />}
-
-      {/* Order actions (prototype's "Update order status" section) */}
+      {/* Update order status (prototype's "Update order status" section) */}
       {canManage && (
-        <Section title="Order actions">
-          <div className="flex flex-wrap gap-2">
+        <Section title="Update order status">
+          <div className="flex flex-wrap items-center gap-2">
+            <Saving busy={updateOrder.isPending}>
+              <select
+                value={statusDraft}
+                onChange={(e) => setStatusDraft(e.target.value as OrderStatus)}
+                className="h-[30px] rounded-md border border-border2 bg-surface px-2 text-xs outline-none focus:border-teal"
+              >
+                {ORDER_STATS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Saving>
+            <Button
+              variant="primary"
+              disabled={statusDraft === order.status || updateOrder.isPending}
+              onClick={() => updateOrder.mutate({ status: statusDraft })}
+            >
+              Save
+            </Button>
             <Button onClick={() => setShowEdit(true)}>Edit details</Button>
-            <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>
-            {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
+            {['Despatched', 'Ready to Despatch'].includes(order.status) && (
               <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
             )}
-            <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete order</Button>
+            <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>
           </div>
         </Section>
       )}
@@ -516,7 +517,6 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
         />
       )}
       {showEdit && <EditOrderForm order={order} onClose={() => setShowEdit(false)} />}
-      {showCatalogue && <CatalogueForm onClose={() => setShowCatalogue(false)} />}
       {editTicket && (
         <EditTicketModal ticket={editTicket.ticket} parts={editTicket.parts} onClose={() => setEditTicket(null)} />
       )}
@@ -625,95 +625,6 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   );
 }
 
-/** Suggested Schedule for an existing order — ported from suggestScheduleHtml:
- * walk the coming weeks filling spare capacity until the order's hours are
- * absorbed, then suggest a start week + deadline (with a 1-week buffer). */
-function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTickets: Ticket[] }) {
-  const { data: operatives } = useOperatives();
-  const { data: allTickets } = useTickets();
-  const { data: settings } = useSettings();
-  const update = useUpdateOrder(order.id);
-  const [manual, setManual] = useState('');
-
-  const totalHrs = orderTickets.reduce((s, t) => s + (t.hrs || 0), 0);
-  const ops = operatives ?? [];
-  const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
-
-  const suggestion = useMemo(
-    () =>
-      computeSuggestedSchedule({
-        ops,
-        allTickets: allTickets ?? [],
-        totalHrs,
-        weights,
-        excludeOrderId: order.id,
-      }),
-    [allTickets, ops, order.id, totalHrs, weights],
-  );
-
-  if (!orderTickets.length) return null;
-  const alreadySet = !!order.deadline;
-  const startLabel = formatWc(new Date(suggestion.startKey));
-
-  return (
-    <Card title="Suggested Schedule" className="mt-4">
-      <div className="p-3.5">
-        <div className="mb-2.5 grid grid-cols-3 gap-2.5">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Total hours</div>
-            <div className="text-xl font-bold">{totalHrs}h</div>
-            <div className="text-[10px] text-text3">{orderTickets.length} ticket{orderTickets.length !== 1 ? 's' : ''}</div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Suggested W/C start</div>
-            <div className="text-[15px] font-bold text-teal">{startLabel}</div>
-            <div className="text-[10px] text-text3">
-              {suggestion.noCapacity ? 'Estimate only' : `${suggestion.weeksNeeded} week${suggestion.weeksNeeded !== 1 ? 's' : ''}`} of production
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-text3">Suggested deadline</div>
-            <div className="text-[15px] font-bold text-teal">{suggestion.deadline}</div>
-            <div className="text-[10px] text-text3">inc. 1 week buffer</div>
-          </div>
-        </div>
-        {suggestion.noCapacity && (
-          <div className="mb-2 text-[10px] text-amber">⚠ Set operative hours in Schedule for accurate suggestions</div>
-        )}
-        {alreadySet ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md bg-teal-l px-2.5 py-2 text-[11px] text-teal">
-            ✓ Deadline confirmed: <strong>{order.deadline!.slice(0, 10)}</strong> · W/C: <strong>{order.wc ?? '—'}</strong>
-            <Button onClick={() => update.mutate({ deadline: null, wc: null })}>Change</Button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="primary"
-              disabled={update.isPending}
-              onClick={() => update.mutate({ wc: startLabel, deadline: suggestion.deadline })}
-            >
-              ✓ Accept suggestion
-            </Button>
-            <span className="text-[11px] text-text3">or set manually:</span>
-            <input
-              type="date"
-              value={manual}
-              onChange={(e) => setManual(e.target.value)}
-              className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
-            />
-            <Button
-              disabled={!manual || update.isPending}
-              onClick={() => update.mutate({ deadline: manual, wc: wcForDeadline(manual) })}
-            >
-              Set
-            </Button>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
-
 function OrderAudit({
   orderId,
   orderNumber,
@@ -738,7 +649,7 @@ function OrderAudit({
 
   return (
     <div className="mt-4">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Activity</div>
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Audit</div>
       <div className="space-y-1">
         {data.map((a) => (
           <div key={a.id} className="flex flex-wrap items-center gap-2 text-[11px]">
