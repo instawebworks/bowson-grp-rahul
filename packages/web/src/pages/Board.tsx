@@ -25,6 +25,7 @@ import {
 import { apiClient } from '../lib/api';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
+import { Spinner } from '../components/ui';
 import { cureState, daysToDeadline, fmtCureMins, fmtElapsed, initials } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
 
@@ -391,7 +392,15 @@ export function Board() {
 
       {/* Board */}
       <div className="flex flex-1 items-stretch gap-0 overflow-x-auto px-2.5 py-3" style={{ overflowY: 'hidden' }}>
-        {isLoading && <div className="p-4 text-xs text-[#888]">Loading…</div>}
+        {isLoading ? (
+          // Cold load only — React Query serves cached tickets instantly on
+          // return visits, so this centred loader shows just on the first open
+          // (the board pulls every live ticket, which takes a moment).
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[#8a928a]">
+            <Spinner size={30} className="text-teal" />
+            <div className="text-xs font-semibold">Loading board…</div>
+          </div>
+        ) : (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           {view === 'stage'
             ? KB_COLS.map((col) => (
@@ -424,6 +433,7 @@ export function Board() {
                 />
               ))}
         </DndContext>
+        )}
       </div>
 
       {detailId != null && <TicketDetailModal ticketId={detailId} onClose={() => setDetailId(null)} />}

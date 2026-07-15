@@ -1882,3 +1882,22 @@ label/location/colour precision so a tester isn't sent to the wrong place:
   opens on the Mould Board tab.
 - Phases 8-9 all accurate (no native popups, audit covers release/override/cure,
   5 CSV exports, 5 PIN gates). Guide is local-only (gitignored); no code change.
+
+---
+
+## 2026-07-15 — Dashboard item badges + T-Card board loader
+
+**Done**
+- **Dashboard Recent Orders — item type badges.** The Items column showed a
+  bare top-level count ("3"); now shows the type breakdown "Slide (Assembly)
+  ×1 · Slide ×2 · Raw Stock ×1" (prototype itemSummary). Dashboard API returns
+  per-type counts; new shared `ItemBadges` component; All Orders refactored to
+  use it (one source of truth). Committed f6ea1ac.
+- **T-Card board loader.** The board pulls every live ticket (~200), so on a
+  cold open it flashed blank/empty columns for 3-4s. Replaced the small
+  side "Loading…" text with a **centred spinner + "Loading board…"** shown
+  only while `isLoading` (cold load — React Query serves cache instantly on
+  return visits, so no flicker then). Columns render once data is ready.
+
+**Next up**
+- Continue the manual test pass.
