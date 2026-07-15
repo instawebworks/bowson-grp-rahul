@@ -10,40 +10,35 @@ import {
   isoDate,
   nextStage,
   nextWeeks,
+  stageIndex,
   wcForDeadline,
   wcKey,
   weekCapacityFor,
 } from '@bowson/shared';
 import {
-  useAssignMould,
-  useConfirmCure,
+  useChangeTicketStatus,
   useDeleteOrder,
-  useMoulds,
   useOperatives,
   useOrder,
   useOrderAudit,
-  useSetCure,
   useSettings,
   useTickets,
   useUpdateOrder,
 } from '../lib/hooks';
 import { apiClient } from '../lib/api';
-import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, Saving, StatusPill, Table } from '../components/ui';
+import { Button, Card, ConfirmDialog, Content, Modal, PageHeader, ProgressBar, Saving, StatusPill } from '../components/ui';
 import { TicketForm } from '../components/TicketForm';
-import { TicketStatusSelect } from '../components/TicketStatusSelect';
+import { useGatedStatusChange } from '../components/TicketStatusSelect';
 import { EditTicketModal } from '../components/EditTicketModal';
+import { TicketDetailModal } from '../components/TicketDetailModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { EditOrderForm } from '../components/EditOrderForm';
 import { CatalogueForm } from '../components/CatalogueForm';
 import { buildDespatchHtml, openDocument } from '../lib/documents';
 import { computeSuggestedSchedule } from '../lib/suggestSchedule';
 import { useAuth } from '../lib/auth';
-import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
+import { fmtDate, money } from '../lib/format';
 import type { Order, Ticket } from '../lib/types';
-
-const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
-const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
-const CURE_PRESETS = [30, 60, 120, 240];
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -56,143 +51,156 @@ function TypeBadge({ type }: { type: string }) {
   const s = TYPE_STYLE[type] ?? TYPE_STYLE.RAW!;
   return (
     <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ backgroundColor: s.bg, color: s.color }}>
-      {type}
+      {type === 'COMP' ? 'Slide (Assembly)' : type === 'MADE' ? 'Slide' : type === 'RAW' ? 'Raw Stock' : 'Part'}
     </span>
   );
 }
 
-function StatusSelect({ ticket }: { ticket: Ticket }) {
-  // COMP status is derived from its parts; show it read-only as a pill.
-  if (ticket.type === 'COMP') return <StatusPill status={ticket.status} />;
-  // Gated select: packing checklist on → Packing, family gate on → Despatched.
-  return <TicketStatusSelect ticket={ticket} />;
-}
-
-function MouldCureCell({
-  ticket,
-  orderId,
-  moulds,
-  now,
-}: {
-  ticket: Ticket;
-  orderId: number;
-  moulds: { id: number; ref: string; status: string }[];
-  now: number;
-}) {
-  const assignMould = useAssignMould(orderId);
-  const setCure = useSetCure(orderId);
-  const confirmCure = useConfirmCure(orderId);
-
-  // Mould is only relevant for manufactured items in the mould stages.
-  const showMould = ticket.type !== 'RAW' && ticket.type !== 'COMP' && MOULD_STAGES.includes(ticket.status);
-  const showCure = CURE_STAGES.includes(ticket.status);
-  const cure = cureState(ticket, now);
-
-  if (!showMould && !showCure) {
-    return <span className="text-text3">{ticket.mould?.ref ?? '—'}</span>;
-  }
-
+/** Labelled section (prototype's .ds / .ds-title). */
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-1">
-      {showMould && (
-        <Saving busy={assignMould.isPending}>
-          <select
-            value={ticket.mouldId ?? ''}
-            disabled={assignMould.isPending}
-            onChange={(e) => assignMould.mutate({ ticketId: ticket.id, mouldId: e.target.value ? Number(e.target.value) : null })}
-            className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
-          >
-            <option value="">— mould —</option>
-            {moulds
-              // Maintenance moulds can't take new work — hide them, but keep the
-              // one this ticket is already on visible so the selection still shows.
-              .filter((m) => m.status !== 'Maintenance' || m.id === ticket.mouldId)
-              .map((m) => (
-                <option key={m.id} value={m.id}>{m.ref}{m.status === 'Maintenance' ? ' (in maintenance)' : ''}</option>
-              ))}
-          </select>
-        </Saving>
-      )}
-      {showCure &&
-        (cure ? (
-          <Saving busy={confirmCure.isPending}>
-            <button
-              onClick={() => confirmCure.mutate({ ticketId: ticket.id })}
-              disabled={confirmCure.isPending}
-              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'
-              }`}
-              title="Confirm cure complete (advances to the next stage)"
-            >
-              {cure.expired ? '✓ cure done — confirm' : `⏱ ${fmtCureMins(cure.remainingMin)} — confirm`}
-            </button>
-          </Saving>
-        ) : (
-          <Saving busy={setCure.isPending}>
-            <select
-              value=""
-              disabled={setCure.isPending}
-              onChange={(e) =>
-                setCure.mutate({
-                  ticketId: ticket.id,
-                  mins: Number(e.target.value),
-                  targetStage: nextStage(ticket.status) ?? undefined,
-                })
-              }
-              className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] text-text2 outline-none focus:border-teal"
-            >
-              <option value="">+ cure timer…</option>
-              {CURE_PRESETS.map((m) => (
-                <option key={m} value={m}>{fmtCureMins(m)}</option>
-              ))}
-            </select>
-          </Saving>
-        ))}
+    <div className="mb-4">
+      <div className="mb-2 flex items-center justify-between border-b border-border pb-1.5 text-[11px] font-bold uppercase tracking-wide text-text3">
+        <span>{title}</span>
+        {action}
+      </div>
+      {children}
     </div>
   );
 }
 
-function TicketRow({
-  ticket,
-  orderId,
-  moulds,
-  now,
-  indent,
-  onEdit,
-  selected,
-  onToggle,
+/** A labelled detail field (prototype's .dfield). */
+function DField({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-text3">{label}</div>
+      <div className={`text-xs font-medium ${muted ? 'text-text3' : ''}`}>{value}</div>
+    </div>
+  );
+}
+
+/** ‹ step-back / › advance buttons with the workflow gates (ported from the
+ * order drawer's reverseTkt / advanceTkt). */
+function AdvanceButtons({ ticket, orderId }: { ticket: Ticket; orderId: number }) {
+  const { requestChange, gateUi, isPending } = useGatedStatusChange(ticket);
+  const reverse = useChangeTicketStatus(orderId);
+  const idx = stageIndex(ticket.status);
+  const canRev = idx > 0;
+  const canAdv = idx >= 0 && idx < GRP_STAGES.length - 1;
+  return (
+    <>
+      {gateUi}
+      <Button
+        title="Step back"
+        className="px-1.5 py-1"
+        disabled={!canRev || reverse.isPending}
+        onClick={(e) => { e.stopPropagation(); if (canRev) reverse.mutate({ ticketId: ticket.id, status: GRP_STAGES[idx - 1]! }); }}
+      >
+        {reverse.isPending ? '…' : '‹'}
+      </Button>
+      <Button
+        variant="primary"
+        title="Advance"
+        className="px-1.5 py-1"
+        disabled={!canAdv || isPending}
+        onClick={(e) => { e.stopPropagation(); const ns = nextStage(ticket.status); if (ns) requestChange(ns); }}
+      >
+        {isPending ? '…' : '›'}
+      </Button>
+    </>
+  );
+}
+
+/** One constituent PART row inside a COMP block (prototype's compPartRow). */
+function PartRow({
+  part, orderId, showChk, selected, onToggle, onEdit, onOpen,
 }: {
-  ticket: Ticket;
+  part: Ticket;
   orderId: number;
-  moulds: { id: number; ref: string; status: string }[];
-  now: number;
-  indent?: boolean;
-  onEdit?: () => void;
-  selected?: boolean;
-  onToggle?: (checked: boolean) => void;
+  showChk: boolean;
+  selected: boolean;
+  onToggle: (checked: boolean) => void;
+  onEdit: () => void;
+  onOpen: () => void;
 }) {
   return (
-    <tr className="border-b border-border last:border-0">
-      {/* PART rows indent the checkbox cell to nest under their parent (prototype parity). */}
-      <td className={`py-2 pr-3 ${indent ? 'pl-8' : 'w-8 pl-3'}`}>
-        {onToggle && ticket.type !== 'RAW' && (
-          <input type="checkbox" className="accent-teal" checked={!!selected} onChange={(e) => onToggle(e.target.checked)} />
+    <div className="mb-0.5 flex items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-teal-l/40" onClick={onOpen} role="button">
+      {showChk && (
+        <input type="checkbox" className="accent-teal" checked={selected} onClick={(e) => e.stopPropagation()} onChange={(e) => onToggle(e.target.checked)} />
+      )}
+      <span className="text-[10px] text-text3">└</span>
+      <TypeBadge type="PART" />
+      <span className="font-semibold text-text2">#{part.tn ?? 'TBC'}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {part.detail}
+        {part.spec && <span className="ml-1.5 rounded bg-teal-l px-1.5 py-0.5 text-[10px] font-semibold text-teal">{part.spec}</span>}
+      </span>
+      <ProgressBar pct={part.pct} />
+      <StatusPill status={part.status} />
+      <Button title="Edit" className="px-1.5 py-0.5" onClick={(e) => { e.stopPropagation(); onEdit(); }}>✎</Button>
+      <AdvanceButtons ticket={part} orderId={orderId} />
+    </div>
+  );
+}
+
+/** A top-level ticket block (RAW / MADE / COMP with nested parts) — prototype's
+ * orderTicketBlock. */
+function OrderTicketBlock({
+  ticket, parts, orderId, showChk, bulkSel, onBulkToggle, onEdit, onOpen,
+}: {
+  ticket: Ticket;
+  parts: Ticket[];
+  orderId: number;
+  showChk: boolean;
+  bulkSel: Set<number>;
+  onBulkToggle: (id: number, checked: boolean) => void;
+  onEdit: (t: Ticket, parts: Ticket[]) => void;
+  onOpen: (id: number) => void;
+}) {
+  const isComp = ticket.type === 'COMP';
+  const isRaw = ticket.type === 'RAW';
+  const headBg = TYPE_STYLE[ticket.type]?.bg ?? TYPE_STYLE.RAW!.bg;
+  const partsDone = parts.filter((p) => p.status === 'Despatched').length;
+
+  return (
+    <div className={`mb-2 overflow-hidden rounded-lg border ${isComp ? 'border-2 border-blue' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: headBg }} onClick={() => onOpen(ticket.id)} role="button">
+        {showChk && ticket.type === 'MADE' && (
+          <input type="checkbox" className="accent-teal" checked={bulkSel.has(ticket.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => onBulkToggle(ticket.id, e.target.checked)} />
         )}
-      </td>
-      <td className="px-3 py-2 tabular-nums text-text3">{ticket.tn ?? '—'}</td>
-      <td className="px-3 py-2"><TypeBadge type={ticket.type} /></td>
-      <td className={`px-3 py-2 ${indent ? 'pl-8 text-text2' : 'font-medium'}`}>
-        {ticket.detail}
-        {ticket.spec && <span className="ml-2 text-[11px] text-text3">{ticket.spec}</span>}
-      </td>
-      <td className="px-3 py-2"><StatusSelect ticket={ticket} /></td>
-      <td className="px-3 py-2"><ProgressBar pct={ticket.pct} /></td>
-      <td className="px-3 py-2"><MouldCureCell ticket={ticket} orderId={orderId} moulds={moulds} now={now} /></td>
-      <td className="px-3 py-2 tabular-nums">{money(ticket.netPrice)}</td>
-      <td className="px-3 py-2">
-        {onEdit && <Button title="Edit" onClick={onEdit}>✎</Button>}
-      </td>
-    </tr>
+        <TypeBadge type={ticket.type} />
+        <span className="font-bold text-teal">#{ticket.tn ?? 'TBC'}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold">{ticket.detail}</span>
+        <Button title="Edit" className="px-1.5 py-0.5" onClick={(e) => { e.stopPropagation(); onEdit(ticket, parts); }}>✎</Button>
+        {!isComp && !isRaw && <ProgressBar pct={ticket.pct} />}
+        {isComp && <ProgressBar pct={parts.length ? Math.round(parts.reduce((s, p) => s + (p.pct || 0), 0) / parts.length) : 0} />}
+        <StatusPill status={ticket.status} />
+        {isRaw && ticket.status === 'Ordered' && (
+          <Button variant="primary" className="px-2 py-0.5" onClick={(e) => { e.stopPropagation(); onOpen(ticket.id); }}>Receive</Button>
+        )}
+        {!isComp && !isRaw && <AdvanceButtons ticket={ticket} orderId={orderId} />}
+      </div>
+      {ticket.spec && <div className="border-t border-border px-3 py-1 text-[11px] text-text3">{ticket.spec}</div>}
+      {isComp && parts.length > 0 && (
+        <div className="border-t border-border bg-surface px-3 py-1.5">
+          <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-text3">
+            {parts.length} constituent parts — {partsDone === parts.length ? 'all complete ✓' : `${parts.length - partsDone} remaining`}
+          </div>
+          {parts.map((p) => (
+            <PartRow
+              key={p.id}
+              part={p}
+              orderId={orderId}
+              showChk={showChk}
+              selected={bulkSel.has(p.id)}
+              onToggle={(c) => onBulkToggle(p.id, c)}
+              onEdit={() => onEdit(p, [])}
+              onOpen={() => onOpen(p.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -241,7 +249,6 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const { id } = useParams();
   const orderId = Number(id);
   const { data: order, isLoading, error } = useOrder(orderId);
-  const { data: moulds } = useMoulds();
   const deleteOrder = useDeleteOrder();
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
@@ -249,6 +256,7 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const [showCatalogue, setShowCatalogue] = useState(false);
   const [deleteFlow, setDeleteFlow] = useState<'pin' | 'confirm' | null>(null);
   const [editTicket, setEditTicket] = useState<{ ticket: Ticket; parts: Ticket[] } | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [bulkSel, setBulkSel] = useState<Set<number>>(new Set());
   const [bulkStage, setBulkStage] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -260,11 +268,6 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
   const [qcRefInput, setQcRefInput] = useState('');
   const qc = useQueryClient();
   const { canManage } = useAuth();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   /** Move each ticked ticket to a target stage; tickets moving into Packing
    * without a QC ref get the shared reference (ported from odAdvanceToStage). */
@@ -367,135 +370,135 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
     openDocument(buildDespatchHtml(ts, dDate, false));
   }
 
-  const actions = (
-    <>
-      {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
-        <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
-      )}
-      {canManage && <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete</Button>}
-      {canManage && <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>}
-      {canManage && <Button onClick={() => setShowEdit(true)}>Edit order</Button>}
-      {canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
-    </>
-  );
+  const selectableIds = tickets.filter((t) => t.type !== 'RAW' && t.type !== 'COMP').map((t) => t.id);
+  const toggleBulk = (id: number, checked: boolean) =>
+    setBulkSel((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
 
   const body = (
     <>
-      <div className="mb-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-        <Meta label="Status" value={<StatusPill status={order.status} />} />
-        <Meta label="Customer ref" value={order.siteName ?? '—'} />
-        <Meta
-          label="Deadline"
-          value={
-            <span className={orderOverdue ? 'font-bold text-red' : ''}>
-              {fmtDate(order.deadline)}{orderOverdue ? ' ⚠ overdue' : ''}
-            </span>
-          }
-        />
-        <Meta label="Target W/C" value={order.wc ?? '—'} />
-        <Meta label="Despatch" value={order.despatch ?? '—'} />
-        <Meta label="Resin" value={order.resinType} />
-        <Meta label="Value" value={money(order.value)} />
-        <Meta label="Progress" value={<div className="pt-1"><ProgressBar pct={orderPct} /></div>} />
-      </div>
-      {order.notes && (
-        <div className="mb-4 rounded-lg bg-surface2 px-3 py-2 text-xs"><span className="text-text3">Notes:</span> {order.notes}</div>
-      )}
-
-      {/* Saved packing checklist (ported from the order drawer's 📦 panel) */}
-      {(order.packingChecklist?.length ?? 0) > 0 && (
-        <div className="mb-4 rounded-lg border border-border bg-surface px-3.5 py-3">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-bold">📦 Packing Hardware</span>
-            <span className="text-[10px] text-text3">
-              {order.packingChecklist!.filter((h) => h.checked).length}/{order.packingChecklist!.length} picked
-            </span>
-          </div>
-          {order.packingChecklist!.map((h, i) => (
-            <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
-              <span className={h.checked ? 'text-teal' : 'text-text3'}>{h.checked ? '✓' : '○'}</span>
-              <span className="flex-1">{h.name}</span>
-              <span className="tabular-nums text-text2">×{h.qty}</span>
-              {h.notes && <span className="text-[10px] italic text-text3">{h.notes}</span>}
-            </div>
-          ))}
-          {order.packingNotes && (
-            <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-text2">{order.packingNotes}</div>
-          )}
+      {/* Order status (prototype's "Order status" section) */}
+      <Section title="Order status">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <StatusPill status={order.status} />
+          <div className="w-44"><ProgressBar pct={orderPct} /></div>
+          {orderOverdue && <span className="rounded bg-red/10 px-1.5 py-0.5 text-[9px] font-bold text-red">⚠ overdue</span>}
         </div>
-      )}
+      </Section>
 
-      <Card
-        title={`Tickets (${tickets.length})`}
-        actions={canManage && <Button variant="primary" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
-      >
-        {canManage && bulkSel.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-teal bg-teal-l px-3.5 py-2">
-            <span className="text-xs font-bold text-teal">{bulkSel.size} selected</span>
-            <label className="flex cursor-pointer items-center gap-1 text-[11px] text-text2">
-              <input
-                type="checkbox"
-                className="accent-teal"
-                checked={tickets.filter((t) => t.type !== 'RAW').every((t) => bulkSel.has(t.id))}
-                onChange={(e) =>
-                  setBulkSel(e.target.checked ? new Set(tickets.filter((t) => t.type !== 'RAW').map((t) => t.id)) : new Set())
-                }
-              />
-              Select all
-            </label>
-            <Button variant="primary" disabled={bulkBusy} onClick={bulkAdvanceOne}>→ Advance one stage</Button>
-            <select
-              value={bulkStage}
-              onChange={(e) => setBulkStage(e.target.value)}
-              className="rounded-md border border-border2 bg-surface px-2 py-1 text-xs outline-none focus:border-teal"
-            >
-              <option value="">— Move to stage —</option>
-              {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <Button disabled={!bulkStage || bulkBusy} onClick={bulkAdvance}>Move to stage</Button>
-            <Button className="ml-auto" onClick={() => setBulkSel(new Set())}>✕ Clear</Button>
+      {/* Details grid (prototype's "Details" section) */}
+      <Section title="Details">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          <DField label="Order #" value={order.orderNumber} />
+          <DField label="Customer" value={order.customer?.name ?? '—'} />
+          <DField label="Customer ref" value={order.siteName ?? '—'} />
+          <DField label="Deadline" value={<span className={orderOverdue ? 'font-bold text-red' : ''}>{fmtDate(order.deadline)}</span>} />
+          <DField label="Despatch" value={order.despatch ?? '—'} />
+          <DField label="W/C" value={order.wc ?? '—'} muted />
+          <DField label="Resin" value={order.resinType} />
+          <DField label="Value" value={money(order.value)} />
+        </div>
+        {order.notes && (
+          <div className="mt-2.5 rounded-lg bg-surface2 px-3 py-2 text-xs text-text2">{order.notes}</div>
+        )}
+        {order.themeImage && (
+          <div className="mt-3">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text3">Colour theme</div>
+            <img src={order.themeImage} alt="Colour theme" className="max-h-56 rounded-lg border border-border" />
           </div>
         )}
-        <Table head={['', 'TN', 'Type', 'Detail', 'Status', 'Progress', 'Mould / Cure', 'Value', '']}>
-          {tops.length === 0 && (
-            <tr>
-              <td colSpan={9} className="px-3 py-10 text-center text-xs text-text3">
-                No tickets yet — click “+ Add ticket” to add items (Step 2).
-              </td>
-            </tr>
-          )}
-          {tops.map((t) => (
-            <FragmentRow
+        {(order.packingChecklist?.length ?? 0) > 0 && (
+          <div className="mt-3 overflow-hidden rounded-lg border border-border">
+            <div className="flex items-center justify-between border-b border-border bg-surface2 px-3 py-2 text-[11px] font-bold">
+              <span>📦 Packing Hardware</span>
+              <span className="text-[10px] text-text3">
+                {order.packingChecklist!.filter((h) => h.checked).length}/{order.packingChecklist!.length} picked
+              </span>
+            </div>
+            <div className="px-3 py-2">
+              {order.packingChecklist!.map((h, i) => (
+                <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
+                  <span>{h.checked ? '✅' : '⬜'}</span>
+                  <span className={h.checked ? 'text-text3 line-through' : ''}>{h.name}</span>
+                  {!!h.qty && <span className="text-[11px] text-text3">×{h.qty}</span>}
+                </div>
+              ))}
+              {order.packingNotes && (
+                <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-text2">{order.packingNotes}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Tickets & items (prototype's block layout + bulk-advance panel) */}
+      <Section
+        title={`Tickets & items (${tops.length})`}
+        action={canManage && <Button variant="primary" className="px-2 py-1 text-[11px]" onClick={() => setShowAdd(true)}>+ Add ticket</Button>}
+      >
+        {canManage && tops.length > 0 && (
+          <div className="mb-2.5 rounded-lg border border-border bg-surface2 px-3 py-2.5">
+            <div className="mb-2 text-[11px] font-bold text-text2">⚖ Bulk advance tickets</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px]">
+                <input
+                  type="checkbox"
+                  className="accent-teal"
+                  checked={selectableIds.length > 0 && selectableIds.every((id) => bulkSel.has(id))}
+                  onChange={(e) => setBulkSel(e.target.checked ? new Set(selectableIds) : new Set())}
+                />
+                Select all
+              </label>
+              <span className="text-[11px] text-text3">{bulkSel.size} selected</span>
+              <Button variant="primary" className="px-2 py-1 text-[11px]" disabled={bulkBusy} onClick={bulkAdvanceOne}>→ Advance one stage</Button>
+              <select
+                value={bulkStage}
+                onChange={(e) => setBulkStage(e.target.value)}
+                className="rounded-md border border-border2 bg-surface px-2 py-1 text-[11px] outline-none focus:border-teal"
+              >
+                <option value="">— or pick stage —</option>
+                {GRP_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <Button className="px-2 py-1 text-[11px]" disabled={!bulkStage || bulkBusy} onClick={bulkAdvance}>Move to stage</Button>
+            </div>
+          </div>
+        )}
+        {tops.length === 0 ? (
+          <div className="py-8 text-center text-xs text-text3">No tickets yet — click “+ Add ticket”.</div>
+        ) : (
+          tops.map((t) => (
+            <OrderTicketBlock
               key={t.id}
               ticket={t}
-              orderId={orderId}
-              moulds={moulds ?? []}
-              now={now}
               parts={t.type === 'COMP' ? partsOf(t.id) : []}
-              onEdit={canManage ? (ticket, parts) => setEditTicket({ ticket, parts }) : undefined}
-              bulkSel={canManage ? bulkSel : undefined}
-              onBulkToggle={
-                canManage
-                  ? (tid, checked) =>
-                      setBulkSel((prev) => {
-                        const next = new Set(prev);
-                        if (checked) next.add(tid); else next.delete(tid);
-                        return next;
-                      })
-                  : undefined
-              }
+              orderId={orderId}
+              showChk={canManage}
+              bulkSel={bulkSel}
+              onBulkToggle={toggleBulk}
+              onEdit={(ticket, parts) => setEditTicket({ ticket, parts })}
+              onOpen={setDetailId}
             />
-          ))}
-        </Table>
-      </Card>
+          ))
+        )}
+      </Section>
 
       {canManage && <SuggestSchedulePanel order={order} orderTickets={tickets} />}
 
-      {order.themeImage && (
-        <div className="mt-4">
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-text3">Colour theme</div>
-          <img src={order.themeImage} alt="Colour theme" className="max-h-56 rounded-lg border border-border" />
-        </div>
+      {/* Order actions (prototype's "Update order status" section) */}
+      {canManage && (
+        <Section title="Order actions">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setShowEdit(true)}>Edit details</Button>
+            <Button onClick={() => setShowCatalogue(true)}>+ Add to catalogue</Button>
+            {['Despatched', 'Ready to Despatch', 'Completed'].includes(order.status) && (
+              <Button onClick={openDespatchNote}>📄 Despatch Note</Button>
+            )}
+            <Button variant="danger" onClick={() => setDeleteFlow('pin')}>Delete order</Button>
+          </div>
+        </Section>
       )}
 
       <OrderAudit orderId={orderId} orderNumber={order.orderNumber} tickets={tickets} />
@@ -599,12 +602,12 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
           {deleteOrder.isError && <div className="mt-2 text-[11px] text-red">Delete failed — {(deleteOrder.error as Error).message}</div>}
         </Modal>
       )}
+      {detailId != null && <TicketDetailModal ticketId={detailId} onClose={() => setDetailId(null)} />}
       {asDrawer ? (
         <OrderDrawerFrame
           title={`Order ${order.orderNumber}`}
           sub={order.customer?.name ?? undefined}
           onClose={closeDrawer}
-          actions={actions}
         >
           {body}
         </OrderDrawerFrame>
@@ -613,58 +616,11 @@ export function OrderDetail({ asDrawer = false }: { asDrawer?: boolean }) {
           <PageHeader
             title={`Order ${order.orderNumber}`}
             sub={order.customer?.name ?? undefined}
-            actions={<><Link to="/orders"><Button>← All Orders</Button></Link>{actions}</>}
+            actions={<Link to="/orders"><Button>← All Orders</Button></Link>}
           />
           <Content>{body}</Content>
         </>
       )}
-    </>
-  );
-}
-
-function FragmentRow({
-  ticket,
-  orderId,
-  moulds,
-  now,
-  parts,
-  onEdit,
-  bulkSel,
-  onBulkToggle,
-}: {
-  ticket: Ticket;
-  orderId: number;
-  moulds: { id: number; ref: string; status: string }[];
-  now: number;
-  parts: Ticket[];
-  onEdit?: (ticket: Ticket, parts: Ticket[]) => void;
-  bulkSel?: Set<number>;
-  onBulkToggle?: (ticketId: number, checked: boolean) => void;
-}) {
-  return (
-    <>
-      <TicketRow
-        ticket={ticket}
-        orderId={orderId}
-        moulds={moulds}
-        now={now}
-        onEdit={onEdit ? () => onEdit(ticket, parts) : undefined}
-        selected={bulkSel?.has(ticket.id)}
-        onToggle={onBulkToggle ? (checked) => onBulkToggle(ticket.id, checked) : undefined}
-      />
-      {parts.map((p) => (
-        <TicketRow
-          key={p.id}
-          ticket={p}
-          orderId={orderId}
-          moulds={moulds}
-          now={now}
-          indent
-          onEdit={onEdit ? () => onEdit(p, []) : undefined}
-          selected={bulkSel?.has(p.id)}
-          onToggle={onBulkToggle ? (checked) => onBulkToggle(p.id, checked) : undefined}
-        />
-      ))}
     </>
   );
 }
@@ -806,11 +762,3 @@ function OrderAudit({
   );
 }
 
-function Meta({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text3">{label}</div>
-      <div className="text-xs font-medium">{value}</div>
-    </div>
-  );
-}
