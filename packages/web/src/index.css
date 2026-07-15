@@ -14,12 +14,22 @@
   --color-teal: #0c6b50;
   --color-teal2: #0f8563;
   --color-teal-l: #dff2eb;
+  --color-teal-ll: #f0faf6;
   --color-amber: #a86e0a;
+  --color-amber-l: #fef0d3;
   --color-red: #922020;
+  --color-red-l: #fdeaea;
   --color-blue: #1558a0;
   --color-purple: #4a42b0;
   --color-green: #2e6810;
   --color-green-l: #eaf5e0;
+  /* Ticket-type tints (ported from t-card.html). */
+  --color-raw: #5c574f;
+  --color-raw-l: #f0ede8;
+  --color-made: #0c6b50;
+  --color-made-l: #dff2eb;
+  --color-comp: #1558a0;
+  --color-comp-l: #e8f1fb;
 
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;

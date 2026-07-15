@@ -166,8 +166,8 @@ export function Modal({
   width = 'max-w-xl',
   side = 'center',
 }: {
-  title: string;
-  sub?: string;
+  title: ReactNode;
+  sub?: ReactNode;
   onClose: () => void;
   /** Optional distinct handler for the ✕ button (defaults to onClose). */
   onX?: () => void;
