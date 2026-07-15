@@ -107,7 +107,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       status: o.status,
       deadline: o.deadline,
       customer: o.customer?.name ?? null,
-      items: (o.tickets ?? []).filter((t) => t.compParentId == null).length,
+      // Top-level ticket counts by type, for the "Slide (Assembly) ×N" badges
+      // (ported from the prototype's itemSummary).
+      items: (o.tickets ?? [])
+        .filter((t) => t.compParentId == null)
+        .reduce((acc, t) => {
+          acc[t.type] = (acc[t.type] ?? 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
       progress: orderProgress(o.tickets ?? []),
     }));
 

@@ -5,6 +5,7 @@ import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
 import { Button, Card, ConfirmDialog, Content, PageHeader, Saving, StatusPill, Table } from '../components/ui';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
+import { ItemBadges, itemCounts } from '../components/ItemBadges';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import type { Order } from '../lib/types';
@@ -14,15 +15,6 @@ const DONE = ['Despatched', 'Completed', 'Cancelled'];
 
 // Toolbar control styling (no forced full width, so the row stays compact).
 const ctrl = 'rounded-md border border-border2 bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-teal';
-
-// Item-badge styling per ticket type (colours match the prototype's tb-* pills).
-const TYPE_BADGE: Record<string, { bg: string; color: string; border: string; label: string }> = {
-  COMP: { bg: '#e8f1fb', color: '#1558a0', border: '#93b8e8', label: 'Slide (Assembly)' },
-  MADE: { bg: '#dff2eb', color: '#0c6b50', border: '#9fd4c2', label: 'Slide' },
-  RAW: { bg: '#f0ede8', color: '#5c574f', border: '#c8c4bc', label: 'Raw Stock' },
-  PART: { bg: '#f3f0fd', color: '#4a42b0', border: '#c4bef0', label: 'Part' },
-};
-const BADGE_ORDER = ['COMP', 'MADE', 'RAW', 'PART'];
 
 interface Props {
   title?: string;
@@ -34,13 +26,6 @@ function orderProgress(o: Order): number {
   const tops = (o.tickets ?? []).filter((t) => t.compParentId == null);
   if (!tops.length) return 0;
   return Math.round(tops.reduce((s, t) => s + (t.pct ?? 0), 0) / tops.length);
-}
-
-function itemBadges(o: Order) {
-  const tops = (o.tickets ?? []).filter((t) => t.compParentId == null);
-  const counts: Record<string, number> = {};
-  for (const t of tops) counts[t.type] = (counts[t.type] ?? 0) + 1;
-  return BADGE_ORDER.filter((k) => counts[k]).map((k) => ({ type: k, n: counts[k]!, ...TYPE_BADGE[k]! }));
 }
 
 /** Coloured percentage badge — red (0%) → green (100%), matching the prototype's progBar. */
@@ -210,7 +195,6 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
               const inlineStatus = o.status === 'Pending' || o.status === 'In Progress';
               const despatched = o.status === 'Despatched' || o.status === 'Completed';
               const cd = countdown(o.deadline);
-              const badges = itemBadges(o);
               return (
                 <tr key={o.id} className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40" onClick={() => navigate(`/orders/${o.id}`)}>
                   <td className="px-3 py-2">
@@ -220,21 +204,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                   <td className="max-w-35 truncate px-3 py-2">{o.customer?.name ?? '—'}</td>
                   <td className="max-w-40 truncate px-3 py-2 text-text2">{o.siteName ?? '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    {badges.length === 0 ? (
-                      <span className="text-text3">—</span>
-                    ) : (
-                      <span className="flex flex-wrap gap-1">
-                        {badges.map((b) => (
-                          <span
-                            key={b.type}
-                            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold"
-                            style={{ background: b.bg, color: b.color, border: `1px solid ${b.border}` }}
-                          >
-                            {b.label} ×{b.n}
-                          </span>
-                        ))}
-                      </span>
-                    )}
+                    <ItemBadges counts={itemCounts(o.tickets ?? [])} />
                   </td>
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     {inlineStatus && canManage ? (

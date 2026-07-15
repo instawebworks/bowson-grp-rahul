@@ -172,7 +172,8 @@ export interface DashboardData {
     status: string;
     deadline: string | null;
     customer: string | null;
-    items: number;
+    /** Top-level ticket counts by type (COMP/MADE/RAW) for the item badges. */
+    items: Partial<Record<'COMP' | 'MADE' | 'RAW' | 'PART', number>>;
     progress: number;
   }[];
   hoursByStage: { stage: string; hrs: number }[];
