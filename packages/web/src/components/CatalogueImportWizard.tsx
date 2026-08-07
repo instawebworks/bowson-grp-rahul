@@ -3,8 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { generateSku } from '@bowson/shared';
 import { apiClient } from '../lib/api';
 import { parseCsv } from '../lib/csv';
+import { useMoulds } from '../lib/hooks';
 import { Button, Modal } from './ui';
-import type { Catalogue } from '../lib/types';
+import type { Catalogue, Mould } from '../lib/types';
 
 /**
  * Catalogue CSV import wizard — ported from the prototype's catImport flow:
@@ -17,6 +18,7 @@ interface ParsedPart {
   detail: string;
   drawing: string | null;
   hrs: number;
+  mouldId: string; // '' = no mould (same convention as CatalogueForm)
 }
 
 interface ParsedProduct {
@@ -58,13 +60,13 @@ function buildSku(p: ParsedProduct): string {
 
 /** Download the example template (ported from dlCatalogueTemplate). */
 function downloadTemplate() {
-  const header = 'product_code,name,type,sell_price,assembly_hrs,notes,part_detail,part_code,part_hrs';
+  const header = 'product_code,name,type,sell_price,assembly_hrs,notes,part_detail,part_code,part_hrs,part_mould';
   const ex = [
-    '10420,Twin Lane Wavy Slide,ASSEMBLY,2850.00,2.5,Standard colours,,, ',
-    ',,,,,,Lane part left,B2-2LA-3600-L,8.5',
-    ',,,,,,Lane part right,B2-2LA-3600-R,8.5',
-    ',,,,,,Start section,B2-2LA-3600-S,6.0',
-    '10512,40 Degree Racing Slide,SINGLE,1200.00,0,,,,',
+    '10420,Twin Lane Wavy Slide,ASSEMBLY,2850.00,2.5,Standard colours,,,, ',
+    ',,,,,,Lane part left,B2-2LA-3600-L,8.5,M-014',
+    ',,,,,,Lane part right,B2-2LA-3600-R,8.5,M-015',
+    ',,,,,,Start section,B2-2LA-3600-S,6.0,',
+    '10512,40 Degree Racing Slide,SINGLE,1200.00,0,,,,,',
   ].join('\r\n');
   const blob = new Blob([`﻿${header}\r\n${ex}`], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -76,6 +78,7 @@ function downloadTemplate() {
 
 export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catalogue[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const { data: moulds } = useMoulds();
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(1);
   const [parsed, setParsed] = useState<ParsedProduct[]>([]);
@@ -110,10 +113,14 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
           warns.push(`Row ${ri + 2}: part row with no part_detail — skipped`);
           return;
         }
+        const mouldRef = (r.part_mould ?? '').trim();
+        const mould = mouldRef ? (moulds ?? []).find((m) => m.ref.toLowerCase() === mouldRef.toLowerCase()) : undefined;
+        if (mouldRef && !mould) warns.push(`Row ${ri + 2}: mould ref "${mouldRef}" not found in the mould register — part will import with no mould`);
         last.parts.push({
           detail: partDetail,
           drawing: (r.part_code ?? r.part_drawing ?? '').trim() || null,
           hrs: Number(r.part_hrs ?? 0) || 0,
+          mouldId: mould ? String(mould.id) : '',
         });
         return;
       }
@@ -166,6 +173,13 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
       }),
     );
 
+  const setPartMould = (pi: number, pti: number, mouldId: string) =>
+    setParsed((prev) =>
+      prev.map((p, i) =>
+        i === pi ? { ...p, parts: p.parts.map((pt, j) => (j === pti ? { ...pt, mouldId } : pt)) } : p,
+      ),
+    );
+
   /** Validate all SKUs are defined before Review (ported from saveCatSkus). */
   function toReview() {
     const missing = parsed.filter((p) => !p.sku || p.sku === '—').map((p) => `${p.productCode} — ${p.name}`);
@@ -187,7 +201,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
           unitPrice: p.unitPrice,
           singlePiece: p.isSingle,
           assemblyHrs: p.assemblyHrs,
-          parts: p.parts.map((pt) => ({ detail: pt.detail, drawing: pt.drawing, hrs: pt.hrs, price: 0 })),
+          parts: p.parts.map((pt) => ({ detail: pt.detail, drawing: pt.drawing, hrs: pt.hrs, price: 0, mouldId: pt.mouldId ? Number(pt.mouldId) : null })),
         };
         const existing = existsFor(p.productCode);
         try {
@@ -254,7 +268,8 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
           </p>
           <ul className="mb-4 ml-4 list-disc text-[11px] leading-6 text-text2">
             <li>A row with a <strong>product_code</strong> starts a product (name required; type SINGLE or ASSEMBLY).</li>
-            <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_hrs).</li>
+            <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_hrs, part_mould).</li>
+            <li><strong>part_mould</strong> is optional — the mould ref from the mould register (e.g. M-014). Unmatched refs import with no mould; you can also set moulds in the Define SKUs step.</li>
             <li>Existing products with a matching product code will be <strong>updated</strong>.</li>
           </ul>
           <Button variant="primary" onClick={downloadTemplate}>⭳ Download CSV template</Button>
@@ -350,6 +365,23 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
                   )}
                 </div>
               </div>
+              {p.parts.length > 0 && (
+                <div className="mt-2 border-t border-border pt-2">
+                  <div className={lbl}>Part moulds (optional)</div>
+                  {p.parts.map((pt, pti) => (
+                    <div key={pti} className="mt-1.5 grid grid-cols-[1fr_150px] items-center gap-2">
+                      <div className="truncate text-[11px] text-text2">
+                        {pt.detail}
+                        {pt.drawing && <span className="ml-1.5 font-mono text-[10px] text-text3">{pt.drawing}</span>}
+                      </div>
+                      <select value={pt.mouldId} onChange={(e) => setPartMould(pi, pti, e.target.value)} title="Default mould" className={inp.replace('mt-1 ', '')}>
+                        <option value="">— No mould —</option>
+                        {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </>
@@ -370,7 +402,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
             </thead>
             <tbody>
               {parsed.map((p, pi) => (
-                <PreviewRows key={pi} p={p} exists={!!existsFor(p.productCode)} />
+                <PreviewRows key={pi} p={p} exists={!!existsFor(p.productCode)} moulds={moulds ?? []} />
               ))}
             </tbody>
           </table>
@@ -398,7 +430,8 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
   );
 }
 
-function PreviewRows({ p, exists }: { p: ParsedProduct; exists: boolean }) {
+function PreviewRows({ p, exists, moulds }: { p: ParsedProduct; exists: boolean; moulds: Mould[] }) {
+  const mouldRef = (id: string) => moulds.find((m) => String(m.id) === id)?.ref;
   return (
     <>
       <tr className="border-b border-border">
@@ -421,7 +454,8 @@ function PreviewRows({ p, exists }: { p: ParsedProduct; exists: boolean }) {
           <td className="px-2.5 py-1 text-[11px] text-text3">└ {pt.detail}</td>
           <td className="px-2.5 py-1 font-mono text-[10px] text-text3">{pt.drawing ?? ''}</td>
           <td className="px-2.5 py-1 text-[10px] text-text3">{pt.hrs}h</td>
-          <td colSpan={2} />
+          <td className="px-2.5 py-1 text-[10px] text-text3">{pt.mouldId ? `⚒ ${mouldRef(pt.mouldId) ?? ''}` : ''}</td>
+          <td />
         </tr>
       ))}
     </>

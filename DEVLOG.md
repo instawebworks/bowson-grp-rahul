@@ -1916,6 +1916,49 @@ all three tables.
 
 ---
 
+## 2026-08-07 — Catalogue CSV import: mould ref per part
+
+**Done**
+- Client test-pass requirement: the PRODUCT CATALOGUE upload must let parts
+  carry a mould ref at the point of upload, matching the manual New Product
+  form's per-part "— No mould —" dropdown. The import wizard previously had no
+  mould concept at all (template, parser and import payload all skipped it), so
+  every CSV-imported part landed mould-less and needed manual fix-up afterwards.
+- Added optional mould support across the whole wizard
+  (CatalogueImportWizard.tsx only — API/DB already accepted `mouldId` per part):
+  - **Template (step 1):** new `part_mould` column (mould ref) on part rows;
+    format notes updated. Old CSVs without the column still import fine.
+  - **Parse (step 2):** `part_mould` matched against the mould register by ref
+    (case-insensitive); unknown refs warn ("part will import with no mould")
+    and still import — mould is optional, per client decision.
+  - **Define SKUs (step 3):** each product card lists its parts under "Part
+    moulds (optional)", each with the same mould dropdown as CatalogueForm, so
+    moulds can be set/corrected in the wizard itself.
+  - **Review (step 4):** part rows show the assigned mould ref (⚒ M-014).
+  - **Import:** parts payload now includes `mouldId` (or null), mirroring the
+    manual form.
+- Verified: web typecheck clean; full round-trip against the live dev API with
+  the exact new payload shape (part with `mouldId` 60 / BGR-AB2-01 + part with
+  null) — both persisted and read back correctly; test product deleted after.
+
+**Features added / modified**
+- Catalogue Import CSV wizard: optional per-part mould ref (CSV column +
+  in-wizard dropdowns + review display + import payload).
+
+**Decisions**
+- Mould is **optional** on import (parity with the manual form's "— No mould —"),
+  not blocking like missing SKUs — confirmed with the client's "based on
+  optional" instruction. Unknown refs downgrade to a warning, never an error.
+
+**Next up**
+- Manual UI pass on the wizard (behind PIN login, so not driven headless):
+  upload a CSV with a valid / unknown / blank `part_mould`, confirm the warning,
+  step-3 dropdowns, step-4 display, and saved part moulds in the edit form.
+- Remind testers to re-download the CSV template (header gained `part_mould`).
+- Continue the client's manual test-pass list.
+
+---
+
 ## 2026-07-15 — Indent PART-row checkboxes to nest under their parent
 
 The prototype indents a child (PART) row's first cell — the checkbox — by 28px
