@@ -105,6 +105,8 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
   const warnings: string[] = [];
   const validResin = RESIN_TYPES.map((r) => r.toLowerCase());
   let lastOrder: string | null = null;
+  /** The assembly above, while its child-part rows are being consumed. */
+  let lastAssembly: { slide: ParsedSlide; parts: Catalogue['parts']; consumed: number } | null = null;
 
   lines.slice(1).forEach((line, ri) => {
     const row = parseLine(line);
@@ -154,26 +156,47 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
     const spec = get(row, 'spec').trim();
     const price = get(row, 'price').trim();
     const cat = matchCat(code, catalogue);
-    const isSingle = !cat || cat.singlePiece || cat.parts.length <= 1;
+
+    // A code that isn't a product may be a child-part row for the assembly
+    // above (one row per part, each with its own colour in `spec`). Parts are
+    // consumed by position; the part code is validated, not used to match.
+    if (!cat && lastAssembly && lastAssembly.consumed < lastAssembly.parts.length) {
+      const idx = lastAssembly.consumed++;
+      const tplPart = lastAssembly.parts[idx]!;
+      const codeOk = tplPart.drawing != null && tplPart.drawing.trim().toLowerCase() === code.toLowerCase();
+      if (!codeOk) {
+        warnings.push(
+          `Row ${rowNo}: part code "${code}" doesn't match part ${idx + 1} of ${lastAssembly.slide.slideCode} ` +
+          `("${tplPart.detail}"${tplPart.drawing ? ` / ${tplPart.drawing}` : ''}) — colour applied by position.`,
+        );
+      }
+      lastAssembly.slide.partSpecs[idx] = spec;
+      return;
+    }
+
+    // Server-side expansion creates PART tickets in part-id order, so align
+    // partSpecs (and the review display) to that same order.
+    const catParts = cat ? cat.parts.slice().sort((a, b) => a.id - b.id) : [];
+    const isSingle = !cat || cat.singlePiece || catParts.length <= 1;
     let ticketsDesc: string;
     let ticketsCount: number;
     if (cat) {
-      ticketsDesc = isSingle ? `${qty}× MADE` : `${qty}× (${cat.parts.length} PART + 1 COMP)`;
-      ticketsCount = isSingle ? qty : (cat.parts.length + 1) * qty;
+      ticketsDesc = isSingle ? `${qty}× MADE` : `${qty}× (${catParts.length} PART + 1 COMP)`;
+      ticketsCount = isSingle ? qty : (catParts.length + 1) * qty;
     } else {
       ticketsDesc = `${qty}× MADE (not in catalogue)`;
       ticketsCount = qty;
       warnings.push(`Row ${rowNo}: slide code "${code}" not in catalogue.`);
     }
 
-    const partNames = cat && !isSingle ? cat.parts.map((pt) => pt.detail) : [];
-    tickets.push({
+    const partNames = cat && !isSingle ? catParts.map((pt) => pt.detail) : [];
+    const slide: ParsedSlide = {
       orderNumber: orderNum,
       slideCode: code,
       catalogueId: cat ? cat.id : null,
       catalogueName: cat ? cat.name : null,
       singlePiece: isSingle,
-      partCount: cat ? cat.parts.length : 0,
+      partCount: cat ? catParts.length : 0,
       spec,
       partNames,
       partSpecs: partNames.map(() => ''),
@@ -181,7 +204,9 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
       unitPrice: price,
       ticketsDesc,
       ticketsCount,
-    });
+    };
+    tickets.push(slide);
+    lastAssembly = cat && !isSingle ? { slide, parts: catParts, consumed: 0 } : null;
   });
 
   if (orders.length === 0 && errors.length === 0) errors.push('No valid orders found in CSV.');
@@ -423,6 +448,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
                 <div><strong>One row per slide.</strong> Order info on the first row only — blank fields carry forward for the same order.</div>
                 <div><strong>Columns:</strong> order_number, customer_name, customer_ref, deadline, despatch_method, resin_type, notes, slide_code, qty, spec, price</div>
                 <div><strong>slide_code</strong> = product code from your master catalogue (e.g. 10420).</div>
+                <div><strong>Per-part colours (optional):</strong> under an assembly you can list its parts one row each — part code in slide_code, colour in spec, in the same order as the catalogue. Parts without a row inherit the slide colour.</div>
               </div>
               <div className="mt-5 flex justify-end">
                 <Button variant="primary" onClick={() => setStep(2)}>Next: Upload CSV →</Button>

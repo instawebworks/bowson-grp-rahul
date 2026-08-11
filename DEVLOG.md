@@ -1916,6 +1916,52 @@ all three tables.
 
 ---
 
+## 2026-08-11 — Order CSV import: child part rows + per-part colours (client snag)
+
+**Done**
+- Client reported: "When I try and import an order from the template it doesn't
+  recognise the child parts." Diagnosed with their actual files (Client Files/):
+  their order CSV lists each assembly's child parts one row each — part code in
+  slide_code, per-part colour in spec (their real workflow needs mixed colours
+  per tube section). The wizard only accepted product codes, so 30/34 rows hit
+  "not in catalogue" and step 5 blocked with 7 unknown codes. Verified the
+  backend expansion + catalogue matching were fully working; the gap was purely
+  the CSV format.
+- **Order import (ImportWizard.tsx):** continuation rows whose code isn't a
+  product are now consumed as child-part rows of the assembly above — aligned
+  by position (server part-id order), part code validated with a warning on
+  mismatch, spec becomes the per-part colour via the existing partSpecs
+  mechanism. Parts without a row inherit the slide colour. Rows that can't be
+  part rows still block as unknown codes. Step-1 notes document the format.
+- **Catalogue import (CatalogueImportWizard.tsx):** their 12609 row exposed two
+  gaps, both fixed: type "SLIDE" now counts as single-piece (was silently
+  treated as ASSEMBLY → imported with 0 parts), and part fields on the product
+  row itself now create the single's one implicit part — which is how a
+  single-piece product carries its mould (BGR-TOD-06 case). Validation now
+  allows a single to have exactly one part row.
+- Verified: typecheck clean; both client files replay through the new parse
+  logic with 0 warnings / 0 blockers and colours landing on the correct parts;
+  live API round-trips confirm 15 PART tickets with alternating per-part
+  colours and a MADE ticket inheriting mouldId from the single's implicit part.
+  All test data removed.
+
+**Features added / modified**
+- Order CSV import: optional child-part rows with per-part colours.
+- Catalogue CSV import: SLIDE type synonym; single-piece mould via product row.
+
+**Decisions**
+- Part rows align **by position**, not by code — the client repeats the same
+  part code (12349 ×7) with different colours, so code matching is ambiguous;
+  the code is a validation check only.
+- Part-row problems warn, never block — the catalogue guarantees the parts.
+
+**Next up**
+- Client to re-import the catalogue once (so 12609 picks up single + mould),
+  then re-test the order import with their same file.
+- Await the client's full snag list once basic flow is confirmed.
+
+---
+
 ## 2026-08-07 — Catalogue CSV import: mould ref per part
 
 **Done**

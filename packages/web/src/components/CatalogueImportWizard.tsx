@@ -130,7 +130,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
       const prod: ParsedProduct = {
         productCode: code,
         name,
-        isSingle: type === 'SINGLE' || type === 'MADE' || type === '1',
+        isSingle: type === 'SINGLE' || type === 'MADE' || type === '1' || type === 'SLIDE',
         unitPrice: Number(r.sell_price ?? 0) || 0,
         assemblyHrs: Number(r.assembly_hrs ?? 0) || 0,
         parts: [],
@@ -138,13 +138,28 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
         skuType: '',
         h: '', l: '', r: '', d: '',
       };
+      // Part fields on the product row itself — how a single-piece product
+      // carries its mould (it has no separate part rows).
+      const inlineDetail = (r.part_detail ?? '').trim();
+      const inlineMouldRef = (r.part_mould ?? '').trim();
+      if (inlineDetail || inlineMouldRef) {
+        const mould = inlineMouldRef ? (moulds ?? []).find((m) => m.ref.toLowerCase() === inlineMouldRef.toLowerCase()) : undefined;
+        if (inlineMouldRef && !mould) warns.push(`Row ${ri + 2}: mould ref "${inlineMouldRef}" not found in the mould register — part will import with no mould`);
+        prod.parts.push({
+          detail: inlineDetail || name,
+          drawing: (r.part_code ?? '').trim() || null,
+          hrs: Number(r.part_hrs ?? 0) || 0,
+          mouldId: mould ? String(mould.id) : '',
+        });
+      }
       out.push(prod);
       last = prod;
     });
-    // Validation warnings (ported).
+    // Validation warnings (ported). A single may carry ONE part row — that is
+    // how its mould/hours are recorded — but several means it is an assembly.
     for (const pr of out) {
       if (!pr.isSingle && pr.parts.length === 0) warns.push(`Product "${pr.name}" (${pr.productCode}): type is ASSEMBLY but no parts found`);
-      if (pr.isSingle && pr.parts.length > 0) {
+      if (pr.isSingle && pr.parts.length > 1) {
         warns.push(`Product "${pr.name}": type is SINGLE but has ${pr.parts.length} part rows — treating as ASSEMBLY`);
         pr.isSingle = false;
       }
@@ -267,9 +282,10 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
             Download the CSV template, fill it in, then upload it in the next step. Format rules:
           </p>
           <ul className="mb-4 ml-4 list-disc text-[11px] leading-6 text-text2">
-            <li>A row with a <strong>product_code</strong> starts a product (name required; type SINGLE or ASSEMBLY).</li>
+            <li>A row with a <strong>product_code</strong> starts a product (name required; type SINGLE / SLIDE or ASSEMBLY).</li>
             <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_hrs, part_mould).</li>
             <li><strong>part_mould</strong> is optional — the mould ref from the mould register (e.g. M-014). Unmatched refs import with no mould; you can also set moulds in the Define SKUs step.</li>
+            <li>For a <strong>single-piece</strong> product, put its mould in part_mould on the product row itself.</li>
             <li>Existing products with a matching product code will be <strong>updated</strong>.</li>
           </ul>
           <Button variant="primary" onClick={downloadTemplate}>⭳ Download CSV template</Button>
