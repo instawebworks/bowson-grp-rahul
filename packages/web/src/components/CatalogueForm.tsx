@@ -33,6 +33,11 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
   const [parts, setParts] = useState<PartRow[]>(
     catalogue?.parts.map((p) => ({ code: p.drawing ?? '', detail: p.detail, mouldId: p.mouldId ? String(p.mouldId) : '', hrs: String(p.hrs) })) ?? [],
   );
+  // A single-piece slide's mould rides on its one implicit part (same
+  // convention as the CSV import and the MADE ticket path).
+  const [singleMouldId, setSingleMouldId] = useState(
+    catalogue?.parts[0]?.mouldId ? String(catalogue.parts[0].mouldId) : '',
+  );
   const [hardware, setHardware] = useState<HwRow[]>(
     catalogue ? catalogue.hardware.map((h) => ({ name: h.name, qty: String(h.qty) })) : DEFAULT_HW,
   );
@@ -69,7 +74,12 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
       lamCureMins: lamCure === '' ? null : Number(lamCure),
       specUrl: spec,
       parts: singlePiece
-        ? []
+        ? [{
+            detail: name.trim(),
+            drawing: null,
+            hrs: Number(assemblyHrs) || 0,
+            mouldId: singleMouldId ? Number(singleMouldId) : null,
+          }]
         : parts.filter((p) => p.detail.trim()).map((p) => ({
             detail: p.detail.trim(),
             drawing: p.code || null,
@@ -147,6 +157,16 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
                   : 'Hours for COMP assembly stage (not including part fabrication)'}
               </span>
             </div>
+            {singlePiece && (
+              <div className="mt-2">
+                <span className="mb-1 block text-[11px] font-semibold text-text2">Mould</span>
+                <select className={inputClass} value={singleMouldId} onChange={(e) => setSingleMouldId(e.target.value)} title="Default mould">
+                  <option value="">— No mould —</option>
+                  {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
+                </select>
+                <div className="mt-0.5 text-[10px] text-text3">The mould this slide is made on</div>
+              </div>
+            )}
           </div>
           <div className="border-l border-border pl-3">
             <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text3">Cure times (optional)</div>

@@ -1916,6 +1916,35 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #2: mould (and hours) for single-piece slides
+
+**Done**
+- Client snag #2: "Single Piece slides need a mould assigned too. No option
+  for this at present." Three defects fixed in one convention:
+  1. **No UI option** — the mould dropdown only existed on part rows, and the
+     whole parts section hides when "Single piece slide" is ticked. The form
+     now shows a Mould dropdown for singles next to the whole-slide hours.
+  2. **Destructive save** — the form sent `parts: []` for singles, so saving
+     a single imported via CSV (12609 with BGR-TOD-06) silently wiped its
+     implicit part and with it the mould. Singles now save one implicit part
+     (name + whole-slide hours + mould) — same convention as the CSV import.
+  3. **0-hour MADE tickets** — a single's ticket takes hours from its part;
+     form-created singles had no part, so tickets landed at 0h (visible in
+     the client's own planner screenshot). The API MADE path now falls back
+     to the template's assemblyHrs when the part carries no hours.
+- Verified live end-to-end: create → MADE 11.33h with mould; edit-save keeps
+  the part and updates the mould (no wipe); 0-hour part + 9h template →
+  MADE 9h. Test data removed.
+
+**Features added / modified**
+- Catalogue form: mould picker for single-piece slides (client snag #2).
+- Orders API: MADE hours fall back to assemblyHrs.
+
+**Next up**
+- Snag #3: Moulds "In Use" — ticket numbers + stage/moulds-owned queue.
+
+---
+
 ## 2026-08-12 — Snag #1: schedule weeks (past hours clearing + current-week assignment)
 
 **Done**
