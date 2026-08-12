@@ -29,3 +29,8 @@ packages/api/prisma/*.db
 
 # internal testing guide — local only, never push to GitHub
 docs/MANUAL_TEST_GUIDE.md
+
+# client-provided files & local Claude settings — local only
+Client Files/
+Client Files 2/
+.claude/
