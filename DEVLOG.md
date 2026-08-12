@@ -1916,6 +1916,43 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #1: schedule weeks (past hours clearing + current-week assignment)
+
+**Done**
+- Client's full snag list received (9 points + their master spreadsheet as
+  reference for the labour/theming scope extension). Worked point 1: the
+  Production Planner's week bucketing, which had two symptoms:
+  1. **Past weeks never cleared** — live tickets stayed bucketed in expired
+     weeks, showing "booked" hours that could never be worked.
+  2. **New tickets didn't join the current week** — with no stored wc, the
+     planner invented "deadline − 14 days", parking new orders in a future
+     week while the current week showed empty (their 34 tickets sat in W/C
+     17/08 while W/C 10/08 said "No tickets scheduled").
+- Fix in ticketWeekKey (Schedule.tsx): stored wc if set; else the CURRENT
+  week; and never earlier than the current week (roll-forward). Matches the
+  prototype, which started orders in the earliest available week and never
+  silently future-bucketed unscheduled tickets. History tab untouched.
+- Verified with the real shared helpers against live data: past-deadline
+  test ticket rolls forward; the client's 34 tickets all bucket to the
+  current week; an explicit future wc stays where it was put.
+
+**Features added / modified**
+- Schedule planner week bucketing (client snag #1, both symptoms).
+
+**Decisions**
+- Client-doc numbering corrected: both schedule symptoms are their point 1;
+  their point 2 is single-piece mould assignment (next up).
+- Unscheduled (wc-less) tickets join the current week rather than a separate
+  "Unscheduled" bucket — same information, simpler planner.
+
+**Next up**
+- Snag #2: mould assignment for single-piece slides in the product form UI.
+- Then #3 mould in-use queue, #4 assembly gate, #5 customer column,
+  #6 T-card drop indicator; #7–9 (stage merge, labour split, theming) are
+  the proposed phase two.
+
+---
+
 ## 2026-08-11 — Order CSV import: child part rows + per-part colours (client snag)
 
 **Done**

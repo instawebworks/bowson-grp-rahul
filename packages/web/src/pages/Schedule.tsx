@@ -11,7 +11,6 @@ import {
   opDayDefault,
   opWeekTotal,
   todayDayIdx,
-  wcForDeadline,
   wcKey,
   weekCapacityFor,
 } from '@bowson/shared';
@@ -34,13 +33,16 @@ const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   PART: { bg: '#f3f0fd', color: '#4a42b0' },
 };
 
-/** The production week key a ticket belongs to (its wc, else derived from the
- * deadline). Weeks that have already passed clamp to the current week: work
- * can't happen in the past, so outstanding hours roll forward instead of
- * sitting "booked" against expired weeks (client snag #1). */
+/** The production week key a ticket belongs to (client snag #1):
+ *  - its stored wc, if one was set;
+ *  - else the CURRENT week — new work joins this week's backlog (the prototype
+ *    started orders in the earliest available week, not deadline − 14 days);
+ *  - and never a week that has already passed: work can't happen in the past,
+ *    so outstanding hours roll forward instead of sitting "booked" against
+ *    expired weeks. */
 function ticketWeekKey(t: Ticket, curKey: string): string {
-  const k = wcKey(t.wc) || wcKey(wcForDeadline(t.order?.deadline ?? t.deadline ?? null));
-  if (k && k < curKey) return curKey;
+  const k = wcKey(t.wc) || curKey;
+  if (k < curKey) return curKey;
   return k;
 }
 
