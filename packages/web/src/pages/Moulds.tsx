@@ -38,10 +38,11 @@ export function Moulds() {
   const cat = catalogue ?? [];
   const unlinkedCount = cat.reduce((n, c) => n + c.parts.filter((p) => !p.mouldId).length, 0);
 
-  // Status-bar metrics
-  const statuses = rows.map((m) => occupancy(m, liveTickets).status);
-  const inUse = statuses.filter((s) => s === 'Partial' || s === 'Full').length;
+  // Status-bar metrics. "In Use" = occupied OR has a queue waiting — a mould
+  // with demand isn't available, even if its chambers are momentarily empty.
+  const occs = rows.map((m) => occupancy(m, liveTickets));
   const maint = rows.filter((m) => m.status === 'Maintenance').length;
+  const inUse = occs.filter((o, i) => rows[i]!.status !== 'Maintenance' && (o.active.length > 0 || o.queued.length > 0)).length;
   const available = rows.length - inUse - maint;
   const unassignedCount = liveTickets.filter(
     (t) => t.status === QUEUE && !t.mouldId && t.type !== 'RAW' && t.type !== 'COMP',
@@ -247,10 +248,12 @@ function BoardTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
   if (moulds.length === 0) return <div className="text-xs text-text3">No moulds yet.</div>;
 
   // Grouped like the prototype's mould board: In Use / Available / Maintenance.
+  // A mould with an empty chamber but a waiting queue counts as In Use — it
+  // has demand; Available means genuinely idle.
   const withOcc = moulds.map((m) => ({ m, ...occupancy(m, tickets) }));
   const groups: { label: string; items: typeof withOcc }[] = [
-    { label: '● In Use', items: withOcc.filter((x) => x.status === 'Partial' || x.status === 'Full') },
-    { label: '○ Available', items: withOcc.filter((x) => x.status === 'Free') },
+    { label: '● In Use', items: withOcc.filter((x) => x.status !== 'Maintenance' && (x.active.length > 0 || x.queued.length > 0)) },
+    { label: '○ Available', items: withOcc.filter((x) => x.status !== 'Maintenance' && x.active.length === 0 && x.queued.length === 0) },
     { label: '⚠ Maintenance', items: withOcc.filter((x) => x.status === 'Maintenance') },
   ];
   // Tickets waiting for a mould with none assigned — candidates for quick-assign.
@@ -266,6 +269,22 @@ function BoardTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
   const MouldCard = ({ m, active, queued, status }: (typeof withOcc)[number]) => {
     // Tickets stranded by this mould's maintenance (assigned + queueing).
     const stranded = status === 'Maintenance' ? tickets.filter((t) => t.mouldId === m.id && t.status === QUEUE) : [];
+    // Queue order: soonest order deadline first, then ticket number. The
+    // first (owned − occupied) are physically loadable right now.
+    const sortedQueue = queued.slice().sort((a, b) => {
+      const da = a.order?.deadline ?? a.deadline ?? '9999';
+      const db = b.order?.deadline ?? b.deadline ?? '9999';
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.tn ?? Infinity) - (b.tn ?? Infinity);
+    });
+    const freeSlots = status === 'Maintenance' ? 0 : Math.max(0, m.qty - active.length);
+    // Their manual system's tooling-bottleneck metric: one lay-up per mould
+    // per day (cure overnight) → days to clear = queued ÷ moulds owned,
+    // AT RISK when that misses the soonest deadline in the queue.
+    const daysToClear = Math.ceil(sortedQueue.length / Math.max(1, m.qty));
+    const soonest = sortedQueue.map((t) => t.order?.deadline ?? t.deadline).filter(Boolean).sort()[0];
+    const daysAvail = soonest ? Math.floor((new Date(soonest).getTime() - now) / 86_400_000) : null;
+    const atRisk = daysAvail != null && daysToClear > daysAvail;
     return (
       <Card key={m.id} title={`${m.ref}${m.name ? ` · ${m.name}` : ''}`}>
         <div className="p-3">
@@ -273,18 +292,36 @@ function BoardTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ color: OCC_COLOR[status], backgroundColor: `${OCC_COLOR[status]}1a` }}>
               {status}
             </span>
-            <span className="text-[11px] text-text3">{active.length}/{m.qty} in use</span>
+            <span className="text-[11px] text-text3">{active.length}/{m.qty} in mould · {m.qty} owned</span>
           </div>
           <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-text3">In mould</div>
-          {active.length ? (
-            active.map((t) => <TicketLine key={t.id} t={t} now={now} onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })} />)
-          ) : (
-            <div className="text-xs text-text3">—</div>
-          )}
-          {queued.length > 0 && (
+          {active.map((t) => (
+            <TicketLine key={t.id} t={t} now={now} showStage onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })} />
+          ))}
+          {Array.from({ length: freeSlots }, (_, i) => (
+            <div key={`free-${i}`} className="my-1 rounded border border-dashed border-teal/50 bg-teal-l/20 px-2 py-1 text-[10px] font-semibold text-teal">
+              ◌ Mould free{sortedQueue.length > active.length + i ? ' — load next from queue' : ''}
+            </div>
+          ))}
+          {active.length === 0 && freeSlots === 0 && status !== 'Maintenance' && <div className="text-xs text-text3">—</div>}
+          {sortedQueue.length > 0 && (
             <>
-              <div className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-wide text-text3">Queued</div>
-              {queued.map((t) => <TicketLine key={t.id} t={t} now={now} onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })} />)}
+              <div className="mb-1 mt-2 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-text3">Queued — {sortedQueue.length}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${atRisk ? 'bg-red/10 text-red' : 'bg-surface2 text-text3'}`}>
+                  ≈{daysToClear} day{daysToClear !== 1 ? 's' : ''} to clear{atRisk ? ' · ⚠ AT RISK' : ''}
+                </span>
+              </div>
+              {sortedQueue.map((t, i) => (
+                <TicketLine
+                  key={t.id}
+                  t={t}
+                  now={now}
+                  pos={i + 1}
+                  ready={i < freeSlots}
+                  onUnassign={() => assign.mutate({ ticketId: t.id, mouldId: null })}
+                />
+              ))}
             </>
           )}
           {status !== 'Maintenance' && status !== 'Full' && unassignedQueue.length > 0 && (
@@ -338,11 +375,37 @@ function BoardTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
   );
 }
 
-function TicketLine({ t, now, onUnassign }: { t: Ticket; now: number; onUnassign?: () => void }) {
+function TicketLine({
+  t,
+  now,
+  onUnassign,
+  showStage,
+  ready,
+  pos,
+}: {
+  t: Ticket;
+  now: number;
+  onUnassign?: () => void;
+  /** Show the ticket's stage badge (Gel Coat / Laminating) — for occupied slots. */
+  showStage?: boolean;
+  /** This queued ticket can be loaded into a free mould right now. */
+  ready?: boolean;
+  /** 1-based queue position. */
+  pos?: number;
+}) {
   const cure = cureState(t, now);
+  const stageCol = STAGE_COLOR[t.status];
   return (
-    <div className="flex items-center justify-between gap-1.5 border-b border-border py-1 text-xs last:border-0">
+    <div className={`flex items-center gap-1.5 border-b border-border py-1 text-xs last:border-0 ${ready ? 'rounded bg-teal-l/40 px-1' : ''}`}>
+      {pos != null && <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-text3">{pos}.</span>}
+      <span className="shrink-0 font-bold text-teal">#{t.tn ?? 'TBC'}</span>
       <span className="truncate">{t.detail}</span>
+      {showStage && stageCol && (
+        <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold" style={{ color: stageCol, backgroundColor: `${stageCol}1a` }}>
+          {t.status.replace(/^\d+\.\s*/, '')}
+        </span>
+      )}
+      {ready && <span className="shrink-0 rounded bg-teal px-1 py-0.5 text-[9px] font-bold text-white">↑ READY TO LOAD</span>}
       {cure && (
         <span className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold ${cure.expired ? 'bg-red/10 text-red' : 'bg-amber-l text-amber'}`}>
           {cure.expired ? '✓ Check' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
@@ -537,7 +600,7 @@ function UnassignedTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[]
         )}
         {unassigned.map((t) => (
           <tr key={t.id} className="border-b border-border last:border-0">
-            <td className="px-3 py-2">{t.detail}</td>
+            <td className="px-3 py-2"><span className="mr-1.5 font-bold text-teal">#{t.tn ?? 'TBC'}</span>{t.detail}</td>
             <td className="px-3 py-2 font-medium">{t.order?.orderNumber ?? `#${t.orderId}`}</td>
             <td className="px-3 py-2">
               <select

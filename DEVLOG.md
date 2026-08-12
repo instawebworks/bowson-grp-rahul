@@ -1916,6 +1916,45 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #3: Mould Board — ticket numbers + capacity-aware queue
+
+**Done**
+- Client snag #3: "Mould in use section doesn't work — it needs ticket number
+  and the queue needs to be defined as if the tickets are in awaiting mould —
+  or if they are in gel or laminate depending on how many moulds we have."
+  Redesigned the Mould Board card (Moulds.tsx):
+  - **Ticket numbers** (#tn) on every line — in-mould, queue, maintenance-
+    stranded, and the Tickets Without Mould tab.
+  - **Capacity-aware slots**: "x/qty in mould · qty owned", a dashed
+    "Mould free — load next from queue" placeholder per empty chamber, and
+    stage badges (Gel Coat / Laminating) + cure timers on occupied slots.
+  - **Ordered queue**: soonest order deadline first, then ticket number,
+    numbered positions; the first (owned − occupied) tickets are flagged
+    "↑ READY TO LOAD".
+  - **Days-to-clear** per card (from the client's own Mould Pressure sheet:
+    queued ÷ moulds owned, one lay-up/day) with an AT RISK tag when the
+    queue can't clear before its soonest deadline.
+  - **Grouping fix**: a mould with empty chambers but a waiting queue is now
+    "In Use" (was "Available" — the main reason the board looked broken).
+    Top stat cards use the same rule.
+- Verified by replaying the exact card computation against live data: both
+  active moulds render slots, ready-to-load markers and days-to-clear
+  correctly (e.g. BGR-TUB-01: 2 owned, 8 queued, #24/#25 ready, ≈4d, OK).
+
+**Features added / modified**
+- Moulds board: capacity-aware, ticket-numbered queue view (client snag #3).
+
+**Decisions**
+- Queue order = soonest deadline, then ticket number; display-only (stage
+  moves stay on the T-Card board); days-to-clear formula per their manual
+  spreadsheet. Flagged as defaults the testers may tune.
+
+**Next up**
+- Snag #4: parts available to assemble once all reach Assembly (gate before
+  QC, not after).
+
+---
+
 ## 2026-08-12 — Snag #2: mould (and hours) for single-piece slides
 
 **Done**
