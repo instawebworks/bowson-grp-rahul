@@ -1916,6 +1916,30 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #5: Customer column alongside Customer Ref
+
+**Done**
+- Client snag #5: "please can customer be a column as well as customer ref?
+  … If we can only have 1 – I would prefer it to be customer." Several ticket
+  views showed only the ref (e.g. "JUNIOR"), which is meaningless without the
+  account it belongs to.
+- **In Production**: Customer column added before Customer Ref, with its own
+  header filter (was one combined ref filter) and a CSV export column.
+- **Despatched**: Customer column added alongside Customer Ref.
+- **Ready to Despatch**: combined cell flipped — customer bold, ref beneath;
+  header retitled "Customer" (his stated fallback preference for tight
+  tables). All Orders / All Tickets already had both.
+- Verified: typecheck clean; live API confirms the customer relation is on
+  every tickets query (GOOLE HUB | JUNIOR renders as expected).
+
+**Features added / modified**
+- Customer visibility across In Production / Despatched / Ready (snag #5).
+
+**Next up**
+- Snag #6: green drop-target box on the T-Card board (prototype parity).
+
+---
+
 ## 2026-08-12 — Snag #4: assemblies unlock when parts reach Assembly (not QC)
 
 **Done**

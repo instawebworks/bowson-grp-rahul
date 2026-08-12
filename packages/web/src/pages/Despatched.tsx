@@ -65,10 +65,10 @@ export function Despatched() {
           </div>
         )}
         <Card>
-          <Table head={['Order #', 'Customer Ref', 'Status', 'Tickets', 'Despatched', '']}>
-            <QueryState isLoading={isLoading} error={error} colSpan={6} />
+          <Table head={['Order #', 'Customer', 'Customer Ref', 'Status', 'Tickets', 'Despatched', '']}>
+            <QueryState isLoading={isLoading} error={error} colSpan={7} />
             {!isLoading && !error && rows.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-10 text-center text-xs text-text3">No despatched orders yet.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-10 text-center text-xs text-text3">No despatched orders yet.</td></tr>
             )}
             {rows.map((o) => {
               const ts = o.tickets ?? [];
@@ -83,6 +83,7 @@ export function Despatched() {
                   onClick={() => navigate(`/orders/${o.id}`)}
                 >
                   <td className="px-3 py-2"><span className="font-bold text-teal">{o.orderNumber}</span></td>
+                  <td className="max-w-35 truncate px-3 py-2">{o.customer?.name ?? '—'}</td>
                   <td className="max-w-40 truncate px-3 py-2 text-text2">{o.siteName ?? '—'}</td>
                   <td className="px-3 py-2">
                     <StatusPill status={isCompleted ? 'Completed' : 'Despatched'} />

@@ -91,7 +91,8 @@ export function InProduction() {
       cf.match('tn', t.tn) &&
       cf.match('type', t.type) &&
       cf.match('order', o?.orderNumber) &&
-      cf.match('ref', `${o?.siteName ?? ''} ${o?.customer?.name ?? ''}`) &&
+      cf.match('customer', o?.customer?.name) &&
+      cf.match('ref', o?.siteName) &&
       cf.match('detail', t.detail) &&
       cf.match('spec', t.spec) &&
       cf.match('stage', t.status) &&
@@ -106,6 +107,7 @@ export function InProduction() {
         { key: 'tn', label: 'Ticket #', value: (t: Ticket) => t.tn ?? '' },
         { key: 'type', label: 'Type', value: (t: Ticket) => t.type },
         { key: 'order', label: 'Order', value: (t: Ticket) => t.order?.orderNumber ?? '' },
+        { key: 'customer', label: 'Customer', value: (t: Ticket) => t.order?.customer?.name ?? '' },
         { key: 'ref', label: 'Customer Ref', value: (t: Ticket) => t.order?.siteName ?? '' },
         { key: 'detail', label: 'Detail', value: (t: Ticket) => t.detail },
         { key: 'spec', label: 'Theme / Spec', value: (t: Ticket) => t.spec ?? '' },
@@ -136,6 +138,7 @@ export function InProduction() {
               <FilterInput key="tn" col="tn" placeholder="Ticket #" filters={cf.filters} onChange={cf.set} />,
               <FilterInput key="type" col="type" placeholder="Type" filters={cf.filters} onChange={cf.set} />,
               <FilterInput key="order" col="order" placeholder="Order" filters={cf.filters} onChange={cf.set} />,
+              <FilterInput key="customer" col="customer" placeholder="Customer" filters={cf.filters} onChange={cf.set} />,
               <FilterInput key="ref" col="ref" placeholder="Customer Ref" filters={cf.filters} onChange={cf.set} />,
               <FilterInput key="detail" col="detail" placeholder="Detail" filters={cf.filters} onChange={cf.set} />,
               <FilterInput key="spec" col="spec" placeholder="Theme / Spec" filters={cf.filters} onChange={cf.set} />,
@@ -147,9 +150,9 @@ export function InProduction() {
               cf.hasFilters ? <Button key="clear" onClick={cf.clear}>✕ Clear</Button> : 'Actions',
             ]}
           >
-            <QueryState isLoading={isLoading} error={error} colSpan={12} />
+            <QueryState isLoading={isLoading} error={error} colSpan={13} />
             {!isLoading && !error && rows.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-xs text-text3">No tickets in production.</td></tr>
+              <tr><td colSpan={13} className="px-3 py-10 text-center text-xs text-text3">No tickets in production.</td></tr>
             )}
             {rows.map((t) => {
               const o = t.order;
@@ -173,6 +176,7 @@ export function InProduction() {
                       {o?.orderNumber ?? '—'}
                     </button>
                   </td>
+                  <td className="max-w-27 truncate px-3 py-2 text-[11px]">{o?.customer?.name ?? '—'}</td>
                   <td className="max-w-27 truncate px-3 py-2 text-[11px] text-text2">{o?.siteName ?? '—'}</td>
                   <td className="max-w-37 px-3 py-2">
                     <span className="block truncate" title={t.detail}>
