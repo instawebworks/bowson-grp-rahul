@@ -461,9 +461,9 @@ export function Tickets() {
             )}
             {slice.map(({ ticket: t, child }) => {
               const o = t.order;
-              const qcIdx = stageIndex('8. QC Check');
+              const asmIdx = stageIndex('7. Assembly');
               const parts = t.type === 'COMP' ? all.filter((p) => p.compParentId === t.id) : [];
-              const partsDone = parts.filter((p) => stageIndex(p.status) >= qcIdx).length;
+              const partsDone = parts.filter((p) => stageIndex(p.status) >= asmIdx).length;
               const parent = t.compParentId != null ? all.find((x) => x.id === t.compParentId) : null;
               return (
                 <tr
@@ -488,7 +488,7 @@ export function Tickets() {
                     </span>
                     {t.type === 'COMP' && parts.length > 0 && (
                       <span className={`block text-[9px] font-bold ${partsDone === parts.length ? 'text-teal' : 'text-amber'}`}>
-                        ★ {partsDone}/{parts.length} parts at QC+
+                        ★ {partsDone}/{parts.length} parts at Assembly+
                       </span>
                     )}
                     {parent && (

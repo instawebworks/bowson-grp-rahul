@@ -152,7 +152,9 @@ export function Ready() {
     );
   }, [despatchable]);
 
-  const qcIdx = stageIndex('8. QC Check');
+  // The blocked panel reflects the DESPATCH gate (familyReadyCheck): a part
+  // counts as done once it reaches Ready to Despatch.
+  const rtdIdx = stageIndex(RTD);
 
   return (
     <>
@@ -324,12 +326,12 @@ export function Ready() {
         {/* Blocked assemblies */}
         {compBlocked.length > 0 && (
           <>
-            <div className="mb-2 text-[11px] font-bold text-amber">⚠ Assembly items blocked — parts not all through QC ({compBlocked.length})</div>
+            <div className="mb-2 text-[11px] font-bold text-amber">⚠ Assembly items blocked — parts not all at Ready to Despatch ({compBlocked.length})</div>
             <Card className="mb-5">
               <Table head={['Ticket #', 'Order', 'Detail', 'Parts status', 'Override']}>
                 {compBlocked.map((t) => {
                   const parts = all.filter((p) => p.compParentId === t.id);
-                  const doneCount = parts.filter((p) => stageIndex(p.status) >= qcIdx).length;
+                  const doneCount = parts.filter((p) => stageIndex(p.status) >= rtdIdx).length;
                   return (
                     <tr key={t.id} className="border-b border-border last:border-0">
                       <td className="px-3 py-2">
@@ -342,10 +344,10 @@ export function Ready() {
                       </td>
                       <td className="max-w-50 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                       <td className="px-3 py-2 text-[11px]">
-                        <span className="text-amber">{doneCount}/{parts.length} parts through QC</span>
+                        <span className="text-amber">{doneCount}/{parts.length} parts at Ready to Despatch</span>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {parts.map((p) => {
-                            const done = stageIndex(p.status) >= qcIdx;
+                            const done = stageIndex(p.status) >= rtdIdx;
                             return (
                               <span
                                 key={p.id}

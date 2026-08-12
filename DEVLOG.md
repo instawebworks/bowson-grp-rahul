@@ -1916,6 +1916,40 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #4: assemblies unlock when parts reach Assembly (not QC)
+
+**Done**
+- Client snag #4: "once all parts reach assembly the parts should show as
+  available to assemble, as assembly comes prior to qc". The COMP roll-up
+  required every part to be at/past 8. QC Check before showing "7. Assembly" —
+  backwards for the factory flow (parts are fabricated, converge, get
+  assembled into one unit, and THEN the assembled slide is QC'd). During
+  testing the client had to push parts through QC to RTD just to wake the
+  assembly up.
+- **Gate moved** in shared compRollupStatus: parts count once they reach
+  7. Assembly. One function drives the API roll-up (syncComp), order status
+  and all boards, so the change applies everywhere — including the COMP's
+  Advance button ("Parts pending") on In Production.
+- **Labels**: "x/y parts through QC" → "parts at Assembly" (In Production),
+  "parts at QC+" → "parts at Assembly+" (All Tickets). The Ready page's
+  blocked panel now states its true criterion — that panel reflects the
+  despatch gate, so it counts/labels "parts at Ready to Despatch".
+- Out of scope (flagged for phase two, ties into the stage merge): the
+  deeper family lifecycle — parts stopping at Assembly and the assembled
+  unit travelling as one. Pre-existing inconsistency noted: bulk-advance
+  stops PARTs at QC while the T-Card board allows drags to RTD and the
+  despatch gate requires parts at RTD.
+- Verified live with the client's 8-part crawl tube: 7/8 parts at Assembly →
+  "Awaiting Parts (7/8)"; 8/8 → "7. Assembly" with zero parts through QC.
+
+**Features added / modified**
+- COMP assembly-availability gate + related labels (client snag #4).
+
+**Next up**
+- Snag #5: customer column alongside customer ref.
+
+---
+
 ## 2026-08-12 — Snag #3: Mould Board — ticket numbers + capacity-aware queue
 
 **Done**

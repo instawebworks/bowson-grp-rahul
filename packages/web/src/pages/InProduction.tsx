@@ -118,7 +118,9 @@ export function InProduction() {
       rows,
     );
 
-  const qcIdx = stageIndex('8. QC Check');
+  // Assembly availability gate: parts count as "done" for a COMP once they
+  // reach Assembly (assembly happens before QC — client snag #4).
+  const asmIdx = stageIndex('7. Assembly');
 
   return (
     <>
@@ -153,7 +155,7 @@ export function InProduction() {
               const o = t.order;
               const isComp = t.type === 'COMP';
               const parts = isComp ? all.filter((p) => p.compParentId === t.id) : [];
-              const partsDone = parts.filter((p) => stageIndex(p.status) >= qcIdx).length;
+              const partsDone = parts.filter((p) => stageIndex(p.status) >= asmIdx).length;
               const allPartsDone = parts.length > 0 && partsDone === parts.length;
               const parent = t.compParentId != null ? all.find((x) => x.id === t.compParentId) : null;
               const cd = countdown(o?.deadline);
@@ -182,7 +184,7 @@ export function InProduction() {
                     )}
                     {isComp && parts.length > 0 && (
                       <span className={`block text-[9px] ${allPartsDone ? 'text-teal' : 'text-amber'}`}>
-                        ☉ {partsDone}/{parts.length} parts through QC
+                        ☉ {partsDone}/{parts.length} parts at Assembly
                       </span>
                     )}
                   </td>

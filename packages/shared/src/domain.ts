@@ -55,16 +55,21 @@ export function compPct(parts: TicketLike[]): number {
  * Roll-up status of a COMP ticket from its parts (ported from compStatus):
  *  - no parts → the COMP's own status
  *  - COMP already past "Spec Required" → its own status
- *  - otherwise → "7. Assembly" if all parts reached QC, else "Awaiting Parts (x/y)"
+ *  - otherwise → "7. Assembly" if all parts reached Assembly, else "Awaiting Parts (x/y)"
+ *
+ * The gate is Assembly, not QC: parts are fabricated individually, converge to
+ * be assembled into one unit, and THEN the assembled slide is QC'd — so the
+ * assembly becomes available the moment every part arrives at Assembly
+ * (client snag #4).
  */
 export function compRollupStatus(comp: TicketLike, parts: TicketLike[]): string {
   if (!parts.length) return comp.status;
   if (stageIndex(comp.status) > 0) return comp.status;
 
-  const qcIdx = stageIndex('8. QC Check');
+  const asmIdx = stageIndex('7. Assembly');
   const doneParts = parts.filter((p) => {
     const idx = stageIndex(p.status);
-    return idx === -1 || idx >= qcIdx;
+    return idx === -1 || idx >= asmIdx;
   }).length;
   if (doneParts === parts.length) return '7. Assembly';
   return `Awaiting Parts (${doneParts}/${parts.length})`;
