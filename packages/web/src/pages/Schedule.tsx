@@ -34,11 +34,14 @@ const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   PART: { bg: '#f3f0fd', color: '#4a42b0' },
 };
 
-/** The production week key a ticket belongs to (its wc, else derived from the deadline). */
-function ticketWeekKey(t: Ticket): string {
-  const k = wcKey(t.wc);
-  if (k) return k;
-  return wcKey(wcForDeadline(t.order?.deadline ?? t.deadline ?? null));
+/** The production week key a ticket belongs to (its wc, else derived from the
+ * deadline). Weeks that have already passed clamp to the current week: work
+ * can't happen in the past, so outstanding hours roll forward instead of
+ * sitting "booked" against expired weeks (client snag #1). */
+function ticketWeekKey(t: Ticket, curKey: string): string {
+  const k = wcKey(t.wc) || wcKey(wcForDeadline(t.order?.deadline ?? t.deadline ?? null));
+  if (k && k < curKey) return curKey;
+  return k;
 }
 
 export function Schedule() {
@@ -64,11 +67,11 @@ export function Schedule() {
     for (const wc of nextWeeks(PLANNER_WEEKS)) labels.set(wcKey(wc), wc);
     for (const t of allTickets) {
       if (HIDDEN.includes(t.status)) continue;
-      const key = ticketWeekKey(t);
+      const key = ticketWeekKey(t, curKey);
       if (key && !labels.has(key)) labels.set(key, formatWc(new Date(key)));
     }
     return [...labels.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, label]) => ({ key, label }));
-  }, [allTickets]);
+  }, [allTickets, curKey]);
 
   // Per-week available hours (day patterns + per-week overrides; current week prorated).
   const capacityFor = useMemo(() => {
@@ -81,12 +84,12 @@ export function Schedule() {
   const committedFor = (key: string) =>
     Math.round(
       allTickets
-        .filter((t) => LIVE.includes(t.status) && ticketWeekKey(t) === key)
+        .filter((t) => LIVE.includes(t.status) && ticketWeekKey(t, curKey) === key)
         .reduce((s, t) => s + (t.hrs || 0) * (weights[t.status] ?? 1), 0),
     );
 
   const ticketsFor = (key: string) =>
-    allTickets.filter((t) => !HIDDEN.includes(t.status) && ticketWeekKey(t) === key);
+    allTickets.filter((t) => !HIDDEN.includes(t.status) && ticketWeekKey(t, curKey) === key);
 
   /** A past day can no longer be planned (ported from editOpDay's guard). */
   const isPastDay = (weekKey: string, di: number) =>
