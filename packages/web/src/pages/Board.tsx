@@ -647,9 +647,11 @@ function StageColumn({
         <span className="truncate">{col.label}{col.warn ? ' ⚠' : ''}</span>
         <span className="rounded-full bg-white/10 px-1.5 py-px text-[11px] text-white/60">{tickets.length}</span>
       </div>
+      {/* Green drop-target box while dragging over (prototype .kb-cards.drag-over);
+          transparent border in the resting state so the column doesn't shift. */}
       <div
         ref={setNodeRef}
-        className={`flex-1 space-y-1.5 p-1.5 ${isOver ? 'bg-[#4ade80]/5' : ''}`}
+        className={`flex-1 space-y-1.5 rounded border-2 p-1.5 ${isOver ? 'border-dashed border-[#4ade80] bg-[#4ade80]/10' : 'border-transparent'}`}
         style={{ overflowY: scrollLock ? 'hidden' : 'auto' }}
       >
         {tickets.map((t) => (
@@ -702,9 +704,10 @@ function OpColumn({
           <span className="rounded-full bg-white/10 px-1.5 py-px text-[11px] text-white/60">{tickets.length}</span>
         </span>
       </div>
+      {/* Same green drop-target box as the stage columns. */}
       <div
         ref={setNodeRef}
-        className={`flex-1 p-1.5 ${isOver ? 'bg-[#4ade80]/5' : ''}`}
+        className={`flex-1 rounded border-2 p-1.5 ${isOver ? 'border-dashed border-[#4ade80] bg-[#4ade80]/10' : 'border-transparent'}`}
         style={{ overflowY: scrollLock ? 'hidden' : 'auto' }}
       >
         {stages.map((s) => (

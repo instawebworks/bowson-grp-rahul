@@ -1916,6 +1916,34 @@ all three tables.
 
 ---
 
+## 2026-08-12 — Snag #6: green drop-target box on the T-Card board — batch complete
+
+**Done**
+- Client snag #6: "On the T card board there is no green box like on my test
+  model to define where the user is dropping the data." The drop detection
+  worked but rendered only a 5% green tint — invisible on the dark board.
+  The prototype's .kb-cards.drag-over (2px dashed #4ade80 + green fill) never
+  got ported.
+- Both droppables (stage columns and operative columns) now show the green
+  dashed box on drag-over, with a transparent resting border so columns
+  don't shift. Purely cosmetic; drag logic untouched.
+- **This closes all six week-one snags** from the client's list (11 Aug):
+  #1 schedule weeks, #2 single-piece mould, #3 mould board, #4 assembly
+  gate, #5 customer column, #6 drop indicator.
+
+**Features added / modified**
+- T-Card board drag-over indicator (client snag #6, prototype parity).
+
+**Next up**
+- Manual test pass by Jacob/Josh/Shaun while the client is away (2 weeks
+  from 14 Aug); collect feedback, especially on the mould board defaults.
+- Phase two proposal for the client's return: merge Gel Coat + Laminating
+  (snag #7), Laminating/Finishing hours split replacing stage weightings
+  (#8), theming complexity multipliers at point of order (#9) — reference
+  data in their Order Book Schedule GRP MASTER V9.7 spreadsheet.
+
+---
+
 ## 2026-08-12 — Snag #5: Customer column alongside Customer Ref
 
 **Done**
