@@ -39,6 +39,9 @@ interface CatPart {
   detail: string;
   spec: string | null;
   hrs: number;
+  /** Labour split (phase 2) — nullable until the catalogue is re-imported. */
+  lamHrs: number | null;
+  finHrs: number | null;
   price: number;
   drawing: string | null;
   mouldId: number | null;
@@ -191,13 +194,16 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
 
       if (parts.length <= 1) {
         const p = parts[0];
+        // Whole-slide hours live on the implicit part, else fall back to
+        // assemblyHrs (the form's "Labour hours for whole slide"). Labour
+        // split snapshot: unsplit hours count as Laminating (phase 2).
+        const total = p?.hrs || tpl.assemblyHrs || 0;
         unwrap(
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'MADE', detail: tpl.name,
             spec: spec ?? p?.spec ?? null, drawing: tpl.drawing ?? p?.drawing ?? null,
-            // Whole-slide hours live on the implicit part, else fall back to
-            // assemblyHrs (the form's "Labour hours for whole slide").
-            status: '1. Spec Required', pct: 0, wc: order.wc, hrs: p?.hrs || tpl.assemblyHrs || 0, qty: 1,
+            status: '1. Spec Required', pct: 0, wc: order.wc, hrs: total, qty: 1,
+            lamHrs: p?.lamHrs ?? total, finHrs: p?.finHrs ?? 0,
             unitPrice: price, netPrice: price, resinType: resin,
             mouldId: p?.mouldId ?? null, themeImage,
           }).select('id'),
@@ -207,13 +213,16 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'COMP', detail: tpl.name, spec,
             drawing: tpl.drawing ?? null, status: '1. Spec Required', pct: 0, wc: order.wc,
-            hrs: tpl.assemblyHrs ?? 0, qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
+            // Assembly-stage labour belongs to the Finishing bucket (phase 2).
+            hrs: tpl.assemblyHrs ?? 0, lamHrs: 0, finHrs: tpl.assemblyHrs ?? 0,
+            qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
           }).select('id').single(),
         ) as { id: number };
         const partRows = parts.map((p, i) => ({
           orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: p.detail,
           spec: body.partSpecs?.[i] || spec || p.spec || null, drawing: p.drawing ?? null, status: '1. Spec Required',
           pct: 0, wc: order.wc, hrs: p.hrs ?? 0, qty: 1, unitPrice: p.price ?? 0,
+          lamHrs: p.lamHrs ?? p.hrs ?? 0, finHrs: p.finHrs ?? 0,
           netPrice: p.price ?? 0, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
         }));
         unwrap(await db.from('tickets').insert(partRows).select('id'));

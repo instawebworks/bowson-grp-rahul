@@ -1916,6 +1916,36 @@ all three tables.
 
 ---
 
+## 2026-08-13 — Phase 2 start (new-scope branch): labour split data model
+
+**Done**
+- Branch `new-scope` created for phase two (client points 7–9); design in
+  docs/PHASE2_DESIGN.md (stage merge + labour split + theming multipliers,
+  DB-safety rules, cutover plan, client sign-off items).
+- Additive migration run against the shared DB (safe for deployed main):
+  lamHrs/finHrs on catalogue_parts and tickets, finish_types table seeded
+  from THEME WORKINGS (values to confirm), backfill lamHrs = hrs.
+- **Labour split wired end-to-end (point 8 data model):**
+  - Shared schema + web types: lamHrs/finHrs on catalogue parts.
+  - CatalogueForm: part rows get Lam/Fin hour inputs (with column headers);
+    singles get a Laminating/Finishing pair for whole-slide hours;
+    hrs = sum everywhere (back-compat).
+  - Catalogue CSV: part_lam_hrs / part_fin_hrs columns (template + parser +
+    import body); lone part_hrs still accepted → Laminating bucket.
+  - Ticket creation snapshots: PARTs carry the part split (legacy → lam),
+    COMP assembly hours land in Finishing, MADE singles carry their split.
+- Verified live: catalogue round-trip, PART/COMP/MADE snapshots all correct;
+  test data removed. Typecheck clean across packages. main untouched.
+
+**Next up (phase 2 sequence)**
+- Finish types at order entry (point 9): picker + CSV column + multiplier
+  applied at ticket creation; Settings editor for multiplier values.
+- Schedule/capacity rework: two load-vs-capacity bars (Laminating /
+  Finishing), retire stage weightings.
+- Stage merge (point 7) + cutover script last.
+
+---
+
 ## 2026-08-12 — Snag #6: green drop-target box on the T-Card board — batch complete
 
 **Done**

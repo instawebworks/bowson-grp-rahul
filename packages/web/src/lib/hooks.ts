@@ -543,7 +543,7 @@ export function useUpdateSettings() {
   });
 }
 
-export interface CataloguePartInput { detail: string; drawing?: string | null; hrs?: number; price?: number; mouldId?: number | null }
+export interface CataloguePartInput { detail: string; drawing?: string | null; hrs?: number; lamHrs?: number | null; finHrs?: number | null; price?: number; mouldId?: number | null }
 export interface CatalogueFormInput {
   productCode: string;
   name: string;

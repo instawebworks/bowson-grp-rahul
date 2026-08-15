@@ -37,7 +37,11 @@ export interface CataloguePart {
   id: number;
   detail: string;
   spec: string | null;
+  /** Total hours (lamHrs + finHrs) — back-compat sum. */
   hrs: number;
+  /** Labour split (phase 2): Laminating (at the mould) / Finishing (trim → packing). */
+  lamHrs: number | null;
+  finHrs: number | null;
   price: number;
   drawing: string | null;
   mouldId: number | null;

@@ -108,7 +108,11 @@ export const ticketUpdateSchema = ticketInputSchema.partial().omit({ orderId: tr
 export const cataloguePartInputSchema = z.object({
   detail: z.string().min(1),
   spec: z.string().nullish(),
+  /** Total hours (lamHrs + finHrs); kept as the back-compat sum. */
   hrs: z.number().nonnegative().default(0),
+  /** Labour split (phase 2): Laminating = at-the-mould work, Finishing = trim → packing. */
+  lamHrs: z.number().nonnegative().nullish(),
+  finHrs: z.number().nonnegative().nullish(),
   price: z.number().nonnegative().default(0),
   drawing: z.string().nullish(),
   mouldId: z.number().int().nullish(),

@@ -3,7 +3,7 @@ import { useCreateCatalogue, useMoulds, useUpdateCatalogue } from '../lib/hooks'
 import type { Catalogue } from '../lib/types';
 import { Button, Field, FormSection, Modal, inputClass } from './ui';
 
-interface PartRow { code: string; detail: string; mouldId: string; hrs: string }
+interface PartRow { code: string; detail: string; mouldId: string; lam: string; fin: string }
 interface HwRow { name: string; qty: string }
 
 const DEFAULT_HW: HwRow[] = [
@@ -30,14 +30,25 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
   const [assemblyHrs, setAssemblyHrs] = useState(String(catalogue?.assemblyHrs ?? 0));
   const [gelCure, setGelCure] = useState(String(catalogue?.gelCureMins ?? 60));
   const [lamCure, setLamCure] = useState(String(catalogue?.lamCureMins ?? 120));
+  // Labour split (phase 2): existing rows without a split default to
+  // lam = total hrs, fin = 0 (matches the migration backfill).
   const [parts, setParts] = useState<PartRow[]>(
-    catalogue?.parts.map((p) => ({ code: p.drawing ?? '', detail: p.detail, mouldId: p.mouldId ? String(p.mouldId) : '', hrs: String(p.hrs) })) ?? [],
+    catalogue?.parts.map((p) => ({
+      code: p.drawing ?? '',
+      detail: p.detail,
+      mouldId: p.mouldId ? String(p.mouldId) : '',
+      lam: String(p.lamHrs ?? p.hrs),
+      fin: String(p.finHrs ?? 0),
+    })) ?? [],
   );
   // A single-piece slide's mould rides on its one implicit part (same
   // convention as the CSV import and the MADE ticket path).
   const [singleMouldId, setSingleMouldId] = useState(
     catalogue?.parts[0]?.mouldId ? String(catalogue.parts[0].mouldId) : '',
   );
+  // A single's whole-slide labour, split the same way.
+  const [singleLam, setSingleLam] = useState(String(catalogue?.parts[0]?.lamHrs ?? catalogue?.parts[0]?.hrs ?? catalogue?.assemblyHrs ?? 0));
+  const [singleFin, setSingleFin] = useState(String(catalogue?.parts[0]?.finHrs ?? 0));
   const [hardware, setHardware] = useState<HwRow[]>(
     catalogue ? catalogue.hardware.map((h) => ({ name: h.name, qty: String(h.qty) })) : DEFAULT_HW,
   );
@@ -63,13 +74,16 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
       setError('Product code and name are required.');
       return;
     }
+    const sLam = Number(singleLam) || 0;
+    const sFin = Number(singleFin) || 0;
     const input = {
       productCode: productCode.trim(),
       name: name.trim(),
       code: code || null,
       unitPrice: Number(unitPrice) || 0,
       singlePiece,
-      assemblyHrs: Number(assemblyHrs) || 0,
+      // For singles assemblyHrs mirrors the whole-slide total (back-compat).
+      assemblyHrs: singlePiece ? sLam + sFin : Number(assemblyHrs) || 0,
       gelCureMins: gelCure === '' ? null : Number(gelCure),
       lamCureMins: lamCure === '' ? null : Number(lamCure),
       specUrl: spec,
@@ -77,13 +91,17 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
         ? [{
             detail: name.trim(),
             drawing: null,
-            hrs: Number(assemblyHrs) || 0,
+            hrs: sLam + sFin,
+            lamHrs: sLam,
+            finHrs: sFin,
             mouldId: singleMouldId ? Number(singleMouldId) : null,
           }]
         : parts.filter((p) => p.detail.trim()).map((p) => ({
             detail: p.detail.trim(),
             drawing: p.code || null,
-            hrs: Number(p.hrs) || 0,
+            hrs: (Number(p.lam) || 0) + (Number(p.fin) || 0),
+            lamHrs: Number(p.lam) || 0,
+            finHrs: Number(p.fin) || 0,
             mouldId: p.mouldId ? Number(p.mouldId) : null,
           })),
       hardware: hardware.filter((h) => h.name.trim()).map((h) => ({ name: h.name.trim(), qty: Number(h.qty) || 0 })),
@@ -146,17 +164,34 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
         {/* Assembly hours + cure times */}
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
-            <span className="mb-1 block text-[11px] font-semibold text-text2">
-              {singlePiece ? 'Labour hours for whole slide' : 'Labour hours for assembly'}
-            </span>
-            <div className="flex items-center gap-2">
-              <input type="number" min={0} className={`${inputClass} w-24`} value={assemblyHrs} onChange={(e) => setAssemblyHrs(e.target.value)} />
-              <span className="text-[10px] leading-tight text-text3">
-                {singlePiece
-                  ? 'Total hours through all stages for this slide'
-                  : 'Hours for COMP assembly stage (not including part fabrication)'}
-              </span>
-            </div>
+            {singlePiece ? (
+              <>
+                <span className="mb-1 block text-[11px] font-semibold text-text2">Labour hours for whole slide</span>
+                <div className="flex items-center gap-2">
+                  <div>
+                    <input type="number" min={0} className={`${inputClass} w-20`} value={singleLam} onChange={(e) => setSingleLam(e.target.value)} title="Laminating hours" />
+                    <div className="mt-0.5 text-[10px] text-text3">Laminating</div>
+                  </div>
+                  <div>
+                    <input type="number" min={0} className={`${inputClass} w-20`} value={singleFin} onChange={(e) => setSingleFin(e.target.value)} title="Finishing hours" />
+                    <div className="mt-0.5 text-[10px] text-text3">Finishing</div>
+                  </div>
+                  <span className="text-[10px] leading-tight text-text3">
+                    Laminating = at the mould (prep, gel, laminate). Finishing = trim → packing.
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="mb-1 block text-[11px] font-semibold text-text2">Labour hours for assembly</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} className={`${inputClass} w-24`} value={assemblyHrs} onChange={(e) => setAssemblyHrs(e.target.value)} />
+                  <span className="text-[10px] leading-tight text-text3">
+                    Hours for COMP assembly stage (not including part fabrication)
+                  </span>
+                </div>
+              </>
+            )}
             {singlePiece && (
               <div className="mt-2">
                 <span className="mb-1 block text-[11px] font-semibold text-text2">Mould</span>
@@ -189,19 +224,25 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
       {!singlePiece && (
         <FormSection title="Parts / components">
           {parts.length === 0 && <div className="mb-2 text-xs text-text3">No parts yet — click Add part.</div>}
+          {parts.length > 0 && (
+            <div className="mb-1 grid grid-cols-[1fr_2fr_130px_60px_60px_auto] gap-2 text-[9px] font-bold uppercase tracking-wide text-text3">
+              <span>Code</span><span>Detail</span><span>Mould</span><span>Lam h</span><span>Fin h</span><span />
+            </div>
+          )}
           {parts.map((p, i) => (
-            <div key={i} className="mb-2 grid grid-cols-[1fr_2fr_130px_70px_auto] items-center gap-2">
+            <div key={i} className="mb-2 grid grid-cols-[1fr_2fr_130px_60px_60px_auto] items-center gap-2">
               <input className={inputClass} value={p.code} onChange={(e) => setPart(i, 'code', e.target.value)} placeholder="Part code" />
               <input className={inputClass} value={p.detail} onChange={(e) => setPart(i, 'detail', e.target.value)} placeholder="Detail / description" />
               <select className={inputClass} value={p.mouldId} onChange={(e) => setPart(i, 'mouldId', e.target.value)} title="Default mould">
                 <option value="">— No mould —</option>
                 {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
               </select>
-              <input type="number" min={0} className={inputClass} value={p.hrs} onChange={(e) => setPart(i, 'hrs', e.target.value)} placeholder="Hrs" />
+              <input type="number" min={0} className={inputClass} value={p.lam} onChange={(e) => setPart(i, 'lam', e.target.value)} placeholder="Lam" title="Laminating hours (at the mould)" />
+              <input type="number" min={0} className={inputClass} value={p.fin} onChange={(e) => setPart(i, 'fin', e.target.value)} placeholder="Fin" title="Finishing hours (trim → packing)" />
               <button onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))} className="rounded bg-red/10 px-1.5 py-1 text-xs text-red">✕</button>
             </div>
           ))}
-          <Button onClick={() => setParts((ps) => [...ps, { code: '', detail: '', mouldId: '', hrs: '0' }])}>+ Add part</Button>
+          <Button onClick={() => setParts((ps) => [...ps, { code: '', detail: '', mouldId: '', lam: '0', fin: '0' }])}>+ Add part</Button>
         </FormSection>
       )}
 

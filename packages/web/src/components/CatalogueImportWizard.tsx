@@ -17,8 +17,21 @@ import type { Catalogue, Mould } from '../lib/types';
 interface ParsedPart {
   detail: string;
   drawing: string | null;
+  /** Total hours = lam + fin (back-compat). */
   hrs: number;
+  /** Labour split (phase 2); a lone part_hrs lands in the Laminating bucket. */
+  lamHrs: number;
+  finHrs: number;
   mouldId: string; // '' = no mould (same convention as CatalogueForm)
+}
+
+/** Read a part row's hour columns: split if given, else part_hrs as Laminating. */
+function readPartHours(r: Record<string, string | undefined>): { hrs: number; lamHrs: number; finHrs: number } {
+  const lam = Number(r.part_lam_hrs ?? 0) || 0;
+  const fin = Number(r.part_fin_hrs ?? 0) || 0;
+  if (lam || fin) return { hrs: lam + fin, lamHrs: lam, finHrs: fin };
+  const total = Number(r.part_hrs ?? 0) || 0;
+  return { hrs: total, lamHrs: total, finHrs: 0 };
 }
 
 interface ParsedProduct {
@@ -60,13 +73,13 @@ function buildSku(p: ParsedProduct): string {
 
 /** Download the example template (ported from dlCatalogueTemplate). */
 function downloadTemplate() {
-  const header = 'product_code,name,type,sell_price,assembly_hrs,notes,part_detail,part_code,part_hrs,part_mould';
+  const header = 'product_code,name,type,sell_price,assembly_hrs,notes,part_detail,part_code,part_hrs,part_lam_hrs,part_fin_hrs,part_mould';
   const ex = [
-    '10420,Twin Lane Wavy Slide,ASSEMBLY,2850.00,2.5,Standard colours,,,, ',
-    ',,,,,,Lane part left,B2-2LA-3600-L,8.5,M-014',
-    ',,,,,,Lane part right,B2-2LA-3600-R,8.5,M-015',
-    ',,,,,,Start section,B2-2LA-3600-S,6.0,',
-    '10512,40 Degree Racing Slide,SINGLE,1200.00,0,,,,,',
+    '10420,Twin Lane Wavy Slide,ASSEMBLY,2850.00,2.5,Standard colours,,,,,, ',
+    ',,,,,,Lane part left,B2-2LA-3600-L,,5.5,3.0,M-014',
+    ',,,,,,Lane part right,B2-2LA-3600-R,,5.5,3.0,M-015',
+    ',,,,,,Start section,B2-2LA-3600-S,6.0,,,',
+    '10512,40 Degree Racing Slide,SINGLE,1200.00,0,,,,,,,',
   ].join('\r\n');
   const blob = new Blob([`﻿${header}\r\n${ex}`], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -119,7 +132,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
         last.parts.push({
           detail: partDetail,
           drawing: (r.part_code ?? r.part_drawing ?? '').trim() || null,
-          hrs: Number(r.part_hrs ?? 0) || 0,
+          ...readPartHours(r),
           mouldId: mould ? String(mould.id) : '',
         });
         return;
@@ -148,7 +161,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
         prod.parts.push({
           detail: inlineDetail || name,
           drawing: (r.part_code ?? '').trim() || null,
-          hrs: Number(r.part_hrs ?? 0) || 0,
+          ...readPartHours(r),
           mouldId: mould ? String(mould.id) : '',
         });
       }
@@ -216,7 +229,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
           unitPrice: p.unitPrice,
           singlePiece: p.isSingle,
           assemblyHrs: p.assemblyHrs,
-          parts: p.parts.map((pt) => ({ detail: pt.detail, drawing: pt.drawing, hrs: pt.hrs, price: 0, mouldId: pt.mouldId ? Number(pt.mouldId) : null })),
+          parts: p.parts.map((pt) => ({ detail: pt.detail, drawing: pt.drawing, hrs: pt.hrs, lamHrs: pt.lamHrs, finHrs: pt.finHrs, price: 0, mouldId: pt.mouldId ? Number(pt.mouldId) : null })),
         };
         const existing = existsFor(p.productCode);
         try {
@@ -283,7 +296,8 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
           </p>
           <ul className="mb-4 ml-4 list-disc text-[11px] leading-6 text-text2">
             <li>A row with a <strong>product_code</strong> starts a product (name required; type SINGLE / SLIDE or ASSEMBLY).</li>
-            <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_hrs, part_mould).</li>
+            <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_lam_hrs, part_fin_hrs, part_mould).</li>
+            <li><strong>Hours split:</strong> part_lam_hrs = laminating (at the mould), part_fin_hrs = finishing (trim → packing). A lone part_hrs still works and counts as laminating.</li>
             <li><strong>part_mould</strong> is optional — the mould ref from the mould register (e.g. M-014). Unmatched refs import with no mould; you can also set moulds in the Define SKUs step.</li>
             <li>For a <strong>single-piece</strong> product, put its mould in part_mould on the product row itself.</li>
             <li>Existing products with a matching product code will be <strong>updated</strong>.</li>
