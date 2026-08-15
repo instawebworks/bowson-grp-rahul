@@ -4,6 +4,7 @@ import {
   useAddTicket,
   useCatalogue,
   useDeleteTicket,
+  useFinishTypes,
   useOperatives,
   useOrder,
   useSettings,
@@ -52,9 +53,12 @@ export function OrderStep2({
   const updateOrder = useUpdateOrder(orderId);
   const updateTicket = useUpdateTicket(orderId);
 
+  const { data: finishTypes } = useFinishTypes();
+
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Catalogue | null>(null);
   const [colour, setColour] = useState('');
+  const [finishTypeId, setFinishTypeId] = useState(''); // '' = PLAIN / default
   const [resin, setResin] = useState(initialResin || 'Standard');
   const [image, setImage] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
@@ -133,11 +137,12 @@ export function OrderStep2({
     try {
       await add.mutateAsync({
         fromCatalogueId: selected.id,
+        finishTypeId: finishTypeId ? Number(finishTypeId) : undefined,
         colour: colour || undefined,
         resin,
         themeImage: image || undefined,
       });
-      // Reset for the next slide (keep resin).
+      // Reset for the next slide (keep resin + finish type).
       setSelected(null);
       setQuery('');
       setColour('');
@@ -190,9 +195,20 @@ export function OrderStep2({
           </div>
         )}
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid grid-cols-3 gap-3">
           <Field label="Colour / RAL / theme">
             <input className={inputClass} value={colour} onChange={(e) => setColour(e.target.value)} placeholder="e.g. RAL 5002 Dark Blue" />
+          </Field>
+          <Field label="Finish">
+            {/* Phase 2: complexity multiplier applied to the ticket hours at creation. */}
+            <select className={inputClass} value={finishTypeId} onChange={(e) => setFinishTypeId(e.target.value)}>
+              {(finishTypes ?? []).map((ft) => (
+                <option key={ft.id} value={ft.id}>
+                  {ft.name}{ft.lamMult !== 1 || ft.finMult !== 1 ? ` (×${ft.lamMult} lam / ×${ft.finMult} fin)` : ''}
+                </option>
+              ))}
+              {(finishTypes ?? []).length === 0 && <option value="">PLAIN</option>}
+            </select>
           </Field>
           <Field label="Resin type">
             <select className={inputClass} value={resin} onChange={(e) => setResin(e.target.value)}>

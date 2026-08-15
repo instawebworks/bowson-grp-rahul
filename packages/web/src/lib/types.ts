@@ -24,6 +24,14 @@ export interface Operative {
   pin?: string | null;
 }
 
+export interface FinishType {
+  id: number;
+  name: string;
+  lamMult: number;
+  finMult: number;
+  sort: number;
+}
+
 export interface Mould {
   id: number;
   ref: string;

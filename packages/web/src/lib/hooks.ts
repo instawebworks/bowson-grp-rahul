@@ -6,6 +6,7 @@ import type {
   Catalogue,
   Customer,
   DashboardData,
+  FinishType,
   Mould,
   Operative,
   Order,
@@ -158,6 +159,8 @@ export function useDeleteCatalogue() {
 
 export interface AddTicketInput {
   fromCatalogueId?: number;
+  /** Finish type (phase 2) — multiplies Laminating/Finishing hours at creation. */
+  finishTypeId?: number | null;
   colour?: string;
   resin?: string;
   type?: string;
@@ -414,6 +417,20 @@ export function useOperatives() {
 
 export function useMoulds() {
   return useQuery({ queryKey: ['moulds'], queryFn: () => apiClient.get<Mould[]>('/api/moulds') });
+}
+
+// ─── Finish types (phase 2: theming multipliers) ─────────────────────────────
+export function useFinishTypes() {
+  return useQuery({ queryKey: ['finish-types'], queryFn: () => apiClient.get<FinishType[]>('/api/finish-types') });
+}
+
+export function useUpdateFinishType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<Pick<FinishType, 'name' | 'lamMult' | 'finMult'>> }) =>
+      apiClient.patch<FinishType>(`/api/finish-types/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finish-types'] }),
+  });
 }
 
 // ─── Operatives CRUD ─────────────────────────────────────────────────────────

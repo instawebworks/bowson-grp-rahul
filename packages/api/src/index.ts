@@ -15,6 +15,7 @@ import { searchRoutes } from './routes/search.js';
 import { auditRoutes } from './routes/audit.js';
 import { scheduleRoutes } from './routes/schedule.js';
 import { settingsRoutes } from './routes/settings.js';
+import { finishTypeRoutes } from './routes/finish-types.js';
 import { authRoutes } from './routes/auth.js';
 
 export async function buildServer() {
@@ -87,6 +88,7 @@ export async function buildServer() {
   await app.register(auditRoutes, { prefix: '/api/audit' });
   await app.register(scheduleRoutes, { prefix: '/api/schedule' });
   await app.register(settingsRoutes, { prefix: '/api/settings' });
+  await app.register(finishTypeRoutes, { prefix: '/api/finish-types' });
 
   return app;
 }

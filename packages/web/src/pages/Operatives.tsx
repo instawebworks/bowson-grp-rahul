@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { STAGE_HRS_REMAINING } from '@bowson/shared';
-import { useOperatives, useSettings, useTickets, useUpdateSettings } from '../lib/hooks';
+import { useFinishTypes, useOperatives, useSettings, useTickets, useUpdateFinishType, useUpdateSettings } from '../lib/hooks';
 import { Button, Content, PageHeader } from '../components/ui';
 import { OperativeForm } from '../components/OperativeForm';
 import { useAuth } from '../lib/auth';
 import { MANAGER_PIN } from '../lib/config';
 import { initials } from '../lib/format';
-import type { Operative } from '../lib/types';
+import type { FinishType, Operative } from '../lib/types';
 
 const WEIGHT_STAGES = Object.keys(STAGE_HRS_REMAINING).filter((s) => s !== 'Despatched');
 
@@ -101,6 +101,7 @@ export function Operatives() {
         {canManage && (
           <>
             <StageWeights />
+            <FinishTypesPanel />
             <ManagerPinPanel />
           </>
         )}
@@ -171,6 +172,69 @@ function StageWeights() {
           <Button onClick={reset}>Reset to defaults</Button>
           {saved && <span className="text-[11px] font-semibold text-teal">✓ Saved</span>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Finish types (phase 2: theming hour multipliers) ────────────────────────
+function FinishTypesPanel() {
+  const { data: finishTypes } = useFinishTypes();
+  const update = useUpdateFinishType();
+  const [edits, setEdits] = useState<Record<number, { lam: string; fin: string }>>({});
+  const [savedId, setSavedId] = useState<number | null>(null);
+
+  const rows = finishTypes ?? [];
+  const valOf = (ft: FinishType) => edits[ft.id] ?? { lam: String(ft.lamMult), fin: String(ft.finMult) };
+  const isDirty = (ft: FinishType) => {
+    const v = valOf(ft);
+    return Number(v.lam) !== ft.lamMult || Number(v.fin) !== ft.finMult;
+  };
+
+  function save(ft: FinishType) {
+    const v = valOf(ft);
+    update.mutate(
+      { id: ft.id, input: { lamMult: Number(v.lam) || 0, finMult: Number(v.fin) || 0 } },
+      { onSuccess: () => { setSavedId(ft.id); setTimeout(() => setSavedId(null), 2000); setEdits((e) => { const { [ft.id]: _drop, ...rest } = e; return rest; }); } },
+    );
+  }
+
+  return (
+    <div className="mt-6">
+      <div className="mb-2 text-xs font-bold">Finish Types — Theming Hour Multipliers</div>
+      <div className="max-w-md rounded-lg border border-border bg-surface p-4">
+        <p className="mb-3 text-xs leading-relaxed text-text2">
+          Selected at point of order, these scale a slide's Laminating and Finishing hours for
+          theming complexity (e.g. THEMED gel coat takes longer). ×1 = no change.
+        </p>
+        <div className="mb-1.5 grid grid-cols-[1fr_80px_80px_auto] items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-text3">
+          <span>Finish</span><span>× Laminating</span><span>× Finishing</span><span />
+        </div>
+        {rows.map((ft) => {
+          const v = valOf(ft);
+          return (
+            <div key={ft.id} className="mb-1.5 grid grid-cols-[1fr_80px_80px_auto] items-center gap-2">
+              <label className="text-xs">{ft.name}</label>
+              <input
+                type="number" min={0} step={0.1} value={v.lam}
+                onChange={(e) => setEdits((cur) => ({ ...cur, [ft.id]: { ...valOf(ft), lam: e.target.value } }))}
+                className="w-18 rounded border border-border2 px-1.5 py-1 text-right text-xs tabular-nums outline-none focus:border-teal"
+              />
+              <input
+                type="number" min={0} step={0.1} value={v.fin}
+                onChange={(e) => setEdits((cur) => ({ ...cur, [ft.id]: { ...valOf(ft), fin: e.target.value } }))}
+                className="w-18 rounded border border-border2 px-1.5 py-1 text-right text-xs tabular-nums outline-none focus:border-teal"
+              />
+              <span className="flex items-center gap-1">
+                <Button disabled={!isDirty(ft) || update.isPending} onClick={() => save(ft)}>Save</Button>
+                {savedId === ft.id && <span className="text-[11px] font-semibold text-teal">✓</span>}
+              </span>
+            </div>
+          );
+        })}
+        <p className="mt-2 text-[10px] text-text3">
+          Applied when tickets are created — changing values here does not alter existing tickets.
+        </p>
       </div>
     </div>
   );

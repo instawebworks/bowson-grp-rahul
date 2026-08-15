@@ -2,8 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { DESPATCH, RESIN_TYPES } from '@bowson/shared';
 import { apiClient } from '../lib/api';
-import { useCatalogue, useCustomers, useOrders, type AddTicketInput } from '../lib/hooks';
-import type { Catalogue, Customer, Order } from '../lib/types';
+import { useCatalogue, useCustomers, useFinishTypes, useOrders, type AddTicketInput } from '../lib/hooks';
+import type { Catalogue, Customer, FinishType, Order } from '../lib/types';
 import { Button, Modal } from './ui';
 
 // ── CSV import wizard: orders + tickets in one file ────────────────────────
@@ -37,6 +37,9 @@ interface ParsedSlide {
   unitPrice: string;
   ticketsDesc: string;
   ticketsCount: number;
+  /** Finish type (phase 2): resolved id, or null for PLAIN/default. */
+  finishTypeId: number | null;
+  finishName: string;
 }
 
 interface ParseResult {
@@ -86,7 +89,7 @@ function parseLine(line: string): string[] {
 }
 
 /** Parse the wizard CSV into orders + slide rows with validation. */
-function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
+function parseImport(text: string, catalogue: Catalogue[], finishTypes: FinishType[]): ParseResult {
   const clean = text.replace(/^﻿/, '');
   const lines = clean.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return { ...EMPTY, errors: ['File appears empty.'] };
@@ -174,6 +177,16 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
       return;
     }
 
+    // Finish type (phase 2): optional column, matched by name; unknown values
+    // warn and fall back to PLAIN/default.
+    const finishRaw = get(row, 'finish_type').trim();
+    const finish = finishRaw
+      ? finishTypes.find((f) => f.name.toLowerCase() === finishRaw.toLowerCase())
+      : undefined;
+    if (finishRaw && !finish) {
+      warnings.push(`Row ${rowNo}: finish_type "${finishRaw}" not recognised — imported as PLAIN.`);
+    }
+
     // Server-side expansion creates PART tickets in part-id order, so align
     // partSpecs (and the review display) to that same order.
     const catParts = cat ? cat.parts.slice().sort((a, b) => a.id - b.id) : [];
@@ -204,6 +217,8 @@ function parseImport(text: string, catalogue: Catalogue[]): ParseResult {
       unitPrice: price,
       ticketsDesc,
       ticketsCount,
+      finishTypeId: finish?.id ?? null,
+      finishName: finish?.name ?? 'PLAIN',
     };
     tickets.push(slide);
     lastAssembly = cat && !isSingle ? { slide, parts: catParts, consumed: 0 } : null;
@@ -226,6 +241,7 @@ function downloadTemplate(catalogue: Catalogue[]) {
     'slide_code (product code from master catalogue)',
     'qty',
     'spec',
+    'finish_type (PLAIN / THEMED / PLAIN WITH LEDS / THEMED WITH LEDS)',
     'price',
   ];
   const specs = ['Blue RAL 5002', 'Red RAL 3020', 'Yellow RAL 1021'];
@@ -244,14 +260,15 @@ function downloadTemplate(catalogue: Catalogue[]) {
         cat.productCode || cat.code || '',
         '1',
         specs[i] ?? '',
+        i === 0 ? 'PLAIN' : '',
         String(cat.unitPrice ?? ''),
       ]);
     });
     const c2 = catalogue[0];
-    rows.push(['25100', 'Blue Planet', 'Blue Planet Flumes', '2026-10-01', DESPATCH[1], 'M2', '', c2 ? c2.productCode || c2.code || '' : '', '2', 'Green RAL 6018', c2 ? String(c2.unitPrice) : '']);
+    rows.push(['25100', 'Blue Planet', 'Blue Planet Flumes', '2026-10-01', DESPATCH[1], 'M2', '', c2 ? c2.productCode || c2.code || '' : '', '2', 'Green RAL 6018', 'THEMED', c2 ? String(c2.unitPrice) : '']);
   } else {
-    rows.push(['25099', 'Acme Leisure', 'Acme Park', '2026-09-15', DESPATCH[0], 'Standard', '', '10420', '1', 'Blue RAL 5002', '1250']);
-    rows.push(['', '', '', '', '', '', '', '10430', '1', 'Red RAL 3020', '980']);
+    rows.push(['25099', 'Acme Leisure', 'Acme Park', '2026-09-15', DESPATCH[0], 'Standard', '', '10420', '1', 'Blue RAL 5002', 'PLAIN', '1250']);
+    rows.push(['', '', '', '', '', '', '', '10430', '1', 'Red RAL 3020', 'THEMED', '980']);
   }
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const csv = [headers, ...rows].map((r) => r.map(esc).join(',')).join('\n');
@@ -269,6 +286,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   const { data: catalogue } = useCatalogue();
   const { data: orders } = useOrders();
   const { data: customers } = useCustomers();
+  const { data: finishTypes } = useFinishTypes();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState(1);
@@ -297,7 +315,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     setStatus('Reading file…');
     const reader = new FileReader();
     reader.onload = () => {
-      const res = parseImport(String(reader.result), cats);
+      const res = parseImport(String(reader.result), cats, finishTypes ?? []);
       setParsed(res);
       setStatus(`✓ Parsed ${res.orders.length} order(s), ${res.tickets.length} slide(s).`);
       setStep(3);
@@ -347,6 +365,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
               s.catalogueId != null
                 ? {
                     fromCatalogueId: s.catalogueId,
+                    finishTypeId: s.finishTypeId ?? undefined,
                     colour: s.spec || undefined,
                     spec: s.spec || null,
                     resinType: o.resin,
@@ -446,8 +465,9 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
               <Button variant="primary" onClick={() => downloadTemplate(cats)}>⬇ Download CSV template</Button>
               <div className="mt-4 space-y-1 text-[11px] leading-relaxed text-text3">
                 <div><strong>One row per slide.</strong> Order info on the first row only — blank fields carry forward for the same order.</div>
-                <div><strong>Columns:</strong> order_number, customer_name, customer_ref, deadline, despatch_method, resin_type, notes, slide_code, qty, spec, price</div>
+                <div><strong>Columns:</strong> order_number, customer_name, customer_ref, deadline, despatch_method, resin_type, notes, slide_code, qty, spec, finish_type, price</div>
                 <div><strong>slide_code</strong> = product code from your master catalogue (e.g. 10420).</div>
+                <div><strong>finish_type</strong> (optional) = PLAIN, THEMED, PLAIN WITH LEDS or THEMED WITH LEDS — scales the ticket hours for theming complexity. Blank = PLAIN.</div>
                 <div><strong>Per-part colours (optional):</strong> under an assembly you can list its parts one row each — part code in slide_code, colour in spec, in the same order as the catalogue. Parts without a row inherit the slide colour.</div>
               </div>
               <div className="mt-5 flex justify-end">

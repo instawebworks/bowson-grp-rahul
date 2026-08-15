@@ -1937,9 +1937,19 @@ all three tables.
 - Verified live: catalogue round-trip, PART/COMP/MADE snapshots all correct;
   test data removed. Typecheck clean across packages. main untouched.
 
+**Later the same day — finish types at order entry (point 9):**
+- /api/finish-types (list + PATCH multipliers); AddTicket accepts
+  finishTypeId and scales the Laminating/Finishing snapshots once at ticket
+  creation (PART lam ×lamMult, COMP assembly fin ×finMult, MADE both);
+  finishTypeId stamped on every family ticket.
+- Order entry: Finish picker in OrderStep2 (shows ×lam/×fin); order CSV
+  gains finish_type column (matched by name, unknown → warn + PLAIN);
+  Operatives & Settings gets a Finish Types multiplier editor (values are
+  the ⚠ defaults awaiting client confirmation — editable, no code change).
+- Verified live: THEMED ×2.5/×1.2 applied exactly; PLAIN unchanged; PATCH
+  round-trip. Test data removed.
+
 **Next up (phase 2 sequence)**
-- Finish types at order entry (point 9): picker + CSV column + multiplier
-  applied at ticket creation; Settings editor for multiplier values.
 - Schedule/capacity rework: two load-vs-capacity bars (Laminating /
   Finishing), retire stage weightings.
 - Stage merge (point 7) + cutover script last.

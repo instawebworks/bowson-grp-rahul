@@ -17,6 +17,8 @@ const SELECT = '*, customer:customers(*), tickets:tickets(*, assignments:ticket_
 /** Add a ticket either from a catalogue template (fromCatalogueId) or manually. */
 const addTicketSchema = z.object({
   fromCatalogueId: z.number().int().optional(),
+  /** Finish type (phase 2): multiplies the Laminating/Finishing hours at creation. */
+  finishTypeId: z.number().int().nullish(),
   colour: z.string().optional(),
   resin: resinTypeSchema.optional(),
   type: ticketTypeSchema.optional(),
@@ -192,39 +194,61 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       // Optional price override (e.g. from CSV import); defaults to the template price.
       const price = body.unitPrice ?? tpl.unitPrice;
 
+      // Finish-type multipliers (phase 2): scale the labour buckets once, at
+      // the point of order. No finish type (or PLAIN) = ×1.
+      let lamMult = 1;
+      let finMult = 1;
+      const finishTypeId = body.finishTypeId ?? null;
+      if (finishTypeId != null) {
+        const ft = unwrap(
+          await db.from('finish_types').select('lamMult, finMult').eq('id', finishTypeId).maybeSingle(),
+        ) as { lamMult: number; finMult: number } | null;
+        if (!ft) return reply.badRequest('finishTypeId does not reference a finish type');
+        lamMult = ft.lamMult;
+        finMult = ft.finMult;
+      }
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+
       if (parts.length <= 1) {
         const p = parts[0];
         // Whole-slide hours live on the implicit part, else fall back to
         // assemblyHrs (the form's "Labour hours for whole slide"). Labour
         // split snapshot: unsplit hours count as Laminating (phase 2).
         const total = p?.hrs || tpl.assemblyHrs || 0;
+        const lam = r2((p?.lamHrs ?? total) * lamMult);
+        const fin = r2((p?.finHrs ?? 0) * finMult);
         unwrap(
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'MADE', detail: tpl.name,
             spec: spec ?? p?.spec ?? null, drawing: tpl.drawing ?? p?.drawing ?? null,
-            status: '1. Spec Required', pct: 0, wc: order.wc, hrs: total, qty: 1,
-            lamHrs: p?.lamHrs ?? total, finHrs: p?.finHrs ?? 0,
+            status: '1. Spec Required', pct: 0, wc: order.wc, hrs: r2(lam + fin), qty: 1,
+            lamHrs: lam, finHrs: fin, finishTypeId,
             unitPrice: price, netPrice: price, resinType: resin,
             mouldId: p?.mouldId ?? null, themeImage,
           }).select('id'),
         );
       } else {
+        // Assembly-stage labour belongs to the Finishing bucket (phase 2).
+        const compFin = r2((tpl.assemblyHrs ?? 0) * finMult);
         const comp = unwrap(
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'COMP', detail: tpl.name, spec,
             drawing: tpl.drawing ?? null, status: '1. Spec Required', pct: 0, wc: order.wc,
-            // Assembly-stage labour belongs to the Finishing bucket (phase 2).
-            hrs: tpl.assemblyHrs ?? 0, lamHrs: 0, finHrs: tpl.assemblyHrs ?? 0,
+            hrs: compFin, lamHrs: 0, finHrs: compFin, finishTypeId,
             qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
           }).select('id').single(),
         ) as { id: number };
-        const partRows = parts.map((p, i) => ({
-          orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: p.detail,
-          spec: body.partSpecs?.[i] || spec || p.spec || null, drawing: p.drawing ?? null, status: '1. Spec Required',
-          pct: 0, wc: order.wc, hrs: p.hrs ?? 0, qty: 1, unitPrice: p.price ?? 0,
-          lamHrs: p.lamHrs ?? p.hrs ?? 0, finHrs: p.finHrs ?? 0,
-          netPrice: p.price ?? 0, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
-        }));
+        const partRows = parts.map((p, i) => {
+          const lam = r2((p.lamHrs ?? p.hrs ?? 0) * lamMult);
+          const fin = r2((p.finHrs ?? 0) * finMult);
+          return {
+            orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: p.detail,
+            spec: body.partSpecs?.[i] || spec || p.spec || null, drawing: p.drawing ?? null, status: '1. Spec Required',
+            pct: 0, wc: order.wc, hrs: r2(lam + fin), qty: 1, unitPrice: p.price ?? 0,
+            lamHrs: lam, finHrs: fin, finishTypeId,
+            netPrice: p.price ?? 0, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
+          };
+        });
         unwrap(await db.from('tickets').insert(partRows).select('id'));
         await syncComp(comp.id);
       }
