@@ -1949,10 +1949,24 @@ all three tables.
 - Verified live: THEMED ×2.5/×1.2 applied exactly; PLAIN unchanged; PATCH
   round-trip. Test data removed.
 
+**Later again — Planner two-bucket rework (point 8, part 2):**
+- The Planner now compares labour to capacity per bucket instead of the
+  stage-completion weightings: Laminating outstanding until a ticket leaves
+  stage 5, Finishing outstanding until Ready to Despatch; capacity pools
+  from operative skills (lam skills → Laminating pool, both → 50/50 split,
+  finishing/unskilled → Finishing pool). Week totals and weekly cards show
+  two labelled bars with per-bucket over-capacity warnings.
+- Weightings remain in the Dashboard / History / schedule-suggestion maths
+  until cutover (they still work against old stage names); the Settings
+  weightings editor is removed at cutover.
+- Verified against live data: Jacob (both skill sets) splits 18.75/18.75,
+  Shaun 40h Finishing; 32 pre-split tickets correctly land as 196h
+  Laminating (over-capacity flagged) / 0h Finishing — the documented
+  transition state until the catalogue is re-imported with split hours.
+
 **Next up (phase 2 sequence)**
-- Schedule/capacity rework: two load-vs-capacity bars (Laminating /
-  Finishing), retire stage weightings.
-- Stage merge (point 7) + cutover script last.
+- Stage merge (point 7) + cutover script (rewrites stage values, removes
+  weightings + editor, merges skills) — last, run only at merge/deploy.
 
 ---
 

@@ -106,6 +106,10 @@ export interface Ticket {
   pct: number;
   wc: string | null;
   hrs: number;
+  /** Labour split snapshots (phase 2); null on tickets created before it. */
+  lamHrs?: number | null;
+  finHrs?: number | null;
+  finishTypeId?: number | null;
   qty: number;
   unitPrice: number;
   netPrice: number;
