@@ -1916,6 +1916,30 @@ all three tables.
 
 ---
 
+## 2026-08-20 — CUTOVER: phase 2 merged to main and live
+
+**Done**
+- new-scope merged to main (fast-forward to d6323ec) and pushed → Vercel
+  deploy; cutover script run with --confirm after the deploy window.
+- Verified in the database: all tickets on the new 9-stage list (no old
+  stages remain; Awaiting Parts roll-ups untouched), operative skills
+  merged (Jacob: Gel Coat & Laminate + Trim & Finish; Shaun: finishing
+  set), stageWeights removed from settings.
+- Verified end-to-end on the new build: mould assignment auto-advances
+  into "4. Gel Coat & Laminate"; renumbered flow to 7. QC Check; dashboard
+  man-hours + schedule route compute via the bucket model. Test data
+  removed.
+- The client can now test phase 2 on the live URL: merged board column,
+  silent cure (Mould Board keeps the countdown), Finish picker + editable
+  multipliers, two-bucket planner with spill-over and LATE flags.
+
+**Next up**
+- Client: re-import the catalogue with split lam/fin hours (their Mould
+  Times sheet has the numbers); confirm/adjust multiplier values in
+  Operatives & Settings; feed back on the planner defaults.
+
+---
+
 ## 2026-08-20 — Phase 2 complete on new-scope: stage merge, weightings retired, spill-over planner
 
 **Done**
