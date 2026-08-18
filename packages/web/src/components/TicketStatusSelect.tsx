@@ -25,7 +25,7 @@ export interface StatusTicket {
 /**
  * Workflow-gated status change, shared by the stage dropdowns and the
  * In Production advance buttons. Ported prototype gates:
- * - moving to "9. Packing" without a QC reference asks for one first
+ * - moving to "8. Packing" without a QC reference asks for one first
  *   (setTicketStatus / advanceTkt QC gate) and saves it to the ticket;
  * - a MADE / COMP entering Packing then verifies the hardware checklist
  *   (showPackingChecklist), saved to the order;
@@ -65,7 +65,7 @@ export function useGatedStatusChange(ticket: StatusTicket) {
 
   function requestChange(status: string) {
     if (!status || status === ticket.status) return;
-    if (status === '9. Packing' && ticket.type !== 'RAW') {
+    if (status === '8. Packing' && ticket.type !== 'RAW') {
       if (!ticket.qcRef) {
         setQcRefInput('');
         setQcRefErr(false);

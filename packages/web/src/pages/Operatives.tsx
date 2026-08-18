@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { STAGE_HRS_REMAINING } from '@bowson/shared';
 import { useFinishTypes, useOperatives, useSettings, useTickets, useUpdateFinishType, useUpdateSettings } from '../lib/hooks';
 import { Button, Content, PageHeader } from '../components/ui';
 import { OperativeForm } from '../components/OperativeForm';
@@ -8,7 +7,6 @@ import { MANAGER_PIN } from '../lib/config';
 import { initials } from '../lib/format';
 import type { FinishType, Operative } from '../lib/types';
 
-const WEIGHT_STAGES = Object.keys(STAGE_HRS_REMAINING).filter((s) => s !== 'Despatched');
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_PATTERN = [7.5, 7.5, 7.5, 7.5, 7.5, 0, 0];
@@ -100,80 +98,12 @@ export function Operatives() {
 
         {canManage && (
           <>
-            <StageWeights />
             <FinishTypesPanel />
             <ManagerPinPanel />
           </>
         )}
       </Content>
     </>
-  );
-}
-
-// ─── Stage completion weightings (editable + persisted) ──────────────────────
-function StageWeights() {
-  const { data: settings } = useSettings();
-  const update = useUpdateSettings();
-  const [pct, setPct] = useState<Record<string, number>>({});
-  const [saved, setSaved] = useState(false);
-
-  // Seed local state from server settings (or defaults) once loaded.
-  useEffect(() => {
-    const src: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
-    setPct(Object.fromEntries(WEIGHT_STAGES.map((s) => [s, Math.round((src[s] ?? 1) * 100)])));
-  }, [settings]);
-
-  const dirty = settings
-    ? WEIGHT_STAGES.some((s) => Math.round((settings.stageWeights[s] ?? 1) * 100) !== (pct[s] ?? 0))
-    : false;
-
-  function save() {
-    const stageWeights = Object.fromEntries(WEIGHT_STAGES.map((s) => [s, (pct[s] ?? 0) / 100]));
-    update.mutate({ stageWeights }, { onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); } });
-  }
-
-  function reset() {
-    setPct(Object.fromEntries(WEIGHT_STAGES.map((s) => [s, Math.round((STAGE_HRS_REMAINING[s as keyof typeof STAGE_HRS_REMAINING] ?? 1) * 100)])));
-  }
-
-  return (
-    <div className="mt-6">
-      <div className="mb-2 text-xs font-bold">Stage Completion Weightings</div>
-      <div className="max-w-md rounded-lg border border-border bg-surface p-4">
-        <p className="mb-3 text-xs leading-relaxed text-text2">
-          Set what % of labour hours remain at each production stage. Pre-production stages should be 100% (no work done).
-          These drive the Man Hours and Lead Time calculations on the dashboard.
-        </p>
-        {WEIGHT_STAGES.map((stage) => {
-          const v = pct[stage] ?? 0;
-          return (
-            <div key={stage} className="mb-1.5 grid grid-cols-[1fr_72px_1fr] items-center gap-2">
-              <label className="text-xs">{stage.replace(/^\d+\.\s*/, '')}</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={v}
-                  onChange={(e) => setPct((cur) => ({ ...cur, [stage]: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))}
-                  className="w-14 rounded border border-border2 px-1.5 py-1 text-right text-xs tabular-nums outline-none focus:border-teal"
-                />
-                <span className="text-xs text-text3">%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-surface2">
-                <div className="h-full rounded-full bg-teal" style={{ width: `${v}%` }} />
-              </div>
-            </div>
-          );
-        })}
-        <div className="mt-3 flex items-center gap-2">
-          <Button variant="primary" disabled={!dirty || update.isPending} onClick={save}>{update.isPending ? 'Saving…' : 'Save weightings'}</Button>
-          <Button onClick={reset}>Reset to defaults</Button>
-          {saved && <span className="text-[11px] font-semibold text-teal">✓ Saved</span>}
-        </div>
-      </div>
-    </div>
   );
 }
 

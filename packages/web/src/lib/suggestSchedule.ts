@@ -7,6 +7,7 @@ import {
   LIVE_STATUSES,
   isoDate,
   nextWeeks,
+  remainingHours,
   wcKey,
   weekCapacityFor,
   type OperativeHoursLike,
@@ -24,13 +25,11 @@ export function computeSuggestedSchedule({
   ops,
   allTickets,
   totalHrs,
-  weights,
   excludeOrderId,
 }: {
   ops: OperativeHoursLike[];
   allTickets: Ticket[];
   totalHrs: number;
-  weights: Record<string, number>;
   excludeOrderId?: number;
 }): SuggestedSchedule {
   const committed = new Map<string, number>();
@@ -39,7 +38,8 @@ export function computeSuggestedSchedule({
     if (!(LIVE_STATUSES as readonly string[]).includes(t.status)) continue;
     const key = wcKey(t.wc);
     if (!key) continue;
-    committed.set(key, (committed.get(key) ?? 0) + (t.hrs || 0) * (weights[t.status] ?? 1));
+    // Phase 2: remaining labour = the bucket model, not stage weightings.
+    committed.set(key, (committed.get(key) ?? 0) + remainingHours(t));
   }
   let hrsRemaining = totalHrs;
   let startKey: string | null = null;

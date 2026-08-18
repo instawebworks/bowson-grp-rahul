@@ -1916,6 +1916,53 @@ all three tables.
 
 ---
 
+## 2026-08-20 — Phase 2 complete on new-scope: stage merge, weightings retired, spill-over planner
+
+**Done**
+- **Client follow-up email (2 asks):** Customer + Customer Ref as separate
+  columns on Ready to Despatch (shipped straight to main, 01ab81c, then
+  merged into new-scope); capacity-constrained scheduling (below).
+- **Stage merge (client point 7):** LIVE_STATUSES is now the merged 9-stage
+  list — "4. Gel Coat & Laminate" replaces Gel Coat + Laminating, stages
+  renumbered (…9. Ready to Despatch). Swept every stage literal across
+  shared, api and web (17 files): board columns, mould occupancy, QC-ref
+  gate, assembly gate, family/despatch gates, status colours, ShopFloor,
+  bulk rules, cure defaults, skills list.
+- **Cure timer relocated:** dropping a card into Gel Coat & Laminate now
+  silently starts the catalogue-default cure clock — no prompt, no card
+  countdown/nag (the laminators' complaint). The clock still feeds the
+  Mould Board. Cure prompt/modal/chip removed from the T-Card board.
+- **Weightings fully retired (point 8 complete):** new shared
+  remainingHours() (bucket model) replaces STAGE_HRS_REMAINING everywhere —
+  dashboard man-hours/committed, /api/schedule history, order schedule
+  suggestion. Stage Completion Weightings editor removed from Settings
+  (Finish Types multipliers panel is its replacement).
+- **Spill-over planner (client email):** a week can never hold more work
+  than it has capacity for. Tickets are placed whole — soonest deadline
+  first, then ticket number — into the earliest week with room in the
+  buckets they need, spilling forward; oversized tickets take an untouched
+  week. Tickets allocated past their deadline week are flagged ⚠ LATE with
+  a per-week banner: "add hours in the grid above or move the deadline out"
+  — the manager actions the client specified.
+- **Cutover script** (migrate-phase2-cutover.ts, --confirm guard):
+  rewrites ticket statuses + cure targets + audit log, merges operative
+  skills (text[]), deletes stageWeights. Run ONLY after deploying this
+  branch. Idempotent.
+- **Verified:** all packages typecheck; post-cutover simulation on live
+  data (all 34 tickets map correctly, skills merge, spill-over spreads the
+  196h laminating backlog across 12 weeks at ≤19h/week with late flags
+  from W/C 07/09 — matching the 04/09 deadline reality); API smoke test on
+  the new build (health, THEMED ticket creation ×2.5, dashboard man-hours
+  via buckets). Test data removed.
+
+**Next up**
+- Client sign-off (multiplier values, cure relocation, finishing pool) —
+  then CUTOVER: merge new-scope → main, deploy, run cutover script
+  --confirm at a quiet moment, smoke-test live, have client re-import the
+  catalogue with split hours.
+
+---
+
 ## 2026-08-13 — Phase 2 start (new-scope branch): labour split data model
 
 **Done**

@@ -2,7 +2,7 @@
 // DOMAIN LOGIC — ported 1:1 from t-card.html. Pure functions, no I/O, so they
 // are shared by the API (authoritative) and the web UI, and are unit-testable.
 // ═══════════════════════════════════════════════════════════════════════════
-import { AUTO_PCT, GRP_STAGES, type GrpStage, type TicketStatus } from './constants.js';
+import { AUTO_PCT, GRP_STAGES, LAM_STAGE, RTD_STAGE, type GrpStage, type TicketStatus } from './constants.js';
 
 /** Minimal ticket shape the domain logic needs. */
 export interface TicketLike {
@@ -35,6 +35,26 @@ export function pctForStatus(status: string, fallback = 0): number {
   return AUTO_PCT[status as TicketStatus] ?? fallback;
 }
 
+/**
+ * Remaining labour hours for a ticket under the phase-2 bucket model
+ * (replaces the stage-completion weightings): Laminating hours are
+ * outstanding until the ticket leaves Gel Coat & Laminate; Finishing hours
+ * until Ready to Despatch. Pre-split tickets (lamHrs null) count fully as
+ * Laminating.
+ */
+export function remainingHours(t: {
+  status: string;
+  hrs?: number | null;
+  lamHrs?: number | null;
+  finHrs?: number | null;
+}): number {
+  const idx = stageIndex(t.status);
+  if (idx < 0) return 0;
+  const lam = idx <= stageIndex(LAM_STAGE) ? (t.lamHrs ?? t.hrs ?? 0) : 0;
+  const fin = idx < stageIndex(RTD_STAGE) ? (t.finHrs ?? 0) : 0;
+  return lam + fin;
+}
+
 /** PART tickets belonging to a COMP. */
 export function partsOf(tickets: TicketLike[], compId: number): TicketLike[] {
   return tickets.filter((t) => t.compParentId === compId);
@@ -55,7 +75,7 @@ export function compPct(parts: TicketLike[]): number {
  * Roll-up status of a COMP ticket from its parts (ported from compStatus):
  *  - no parts → the COMP's own status
  *  - COMP already past "Spec Required" → its own status
- *  - otherwise → "7. Assembly" if all parts reached Assembly, else "Awaiting Parts (x/y)"
+ *  - otherwise → "6. Assembly" if all parts reached Assembly, else "Awaiting Parts (x/y)"
  *
  * The gate is Assembly, not QC: parts are fabricated individually, converge to
  * be assembled into one unit, and THEN the assembled slide is QC'd — so the
@@ -66,12 +86,12 @@ export function compRollupStatus(comp: TicketLike, parts: TicketLike[]): string 
   if (!parts.length) return comp.status;
   if (stageIndex(comp.status) > 0) return comp.status;
 
-  const asmIdx = stageIndex('7. Assembly');
+  const asmIdx = stageIndex('6. Assembly');
   const doneParts = parts.filter((p) => {
     const idx = stageIndex(p.status);
     return idx === -1 || idx >= asmIdx;
   }).length;
-  if (doneParts === parts.length) return '7. Assembly';
+  if (doneParts === parts.length) return '6. Assembly';
   return `Awaiting Parts (${doneParts}/${parts.length})`;
 }
 
@@ -110,7 +130,7 @@ export interface FamilyReadyResult {
 
 /**
  * Check whether all members of a COMP family (the assembly + every part) are at
- * "10. Ready to Despatch" (ported from familyReadyCheck). MADE tickets have no
+ * "9. Ready to Despatch" (ported from familyReadyCheck). MADE tickets have no
  * family and are always ready.
  */
 export function familyReadyCheck(
@@ -123,7 +143,7 @@ export function familyReadyCheck(
   if (!comp) return { ready: true, notReady: [], compId };
 
   const parts = tickets.filter((t) => t.compParentId === compId);
-  const rtd = '10. Ready to Despatch';
+  const rtd = '9. Ready to Despatch';
   const notReady: FamilyNotReady[] = [];
   if (comp.status !== rtd) {
     notReady.push({ tn: comp.tn ?? null, detail: comp.detail ?? '', type: 'Assembly', status: comp.status });
@@ -140,7 +160,7 @@ export function familyReadyCheck(
   return { ready: notReady.length === 0, notReady, compId };
 }
 
-const READY_OR_DONE = ['10. Ready to Despatch', 'Despatched'];
+const READY_OR_DONE = ['9. Ready to Despatch', 'Despatched'];
 
 /**
  * Derive an order's status from its tickets (ported from autoOrderStatus).

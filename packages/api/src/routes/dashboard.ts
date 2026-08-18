@@ -2,13 +2,12 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   HRS_PER_DAY,
   LIVE_STATUSES,
-  STAGE_HRS_REMAINING,
   STAGE_SKILLS,
   formatWc,
   nextWeeks,
   orderProgress,
+  remainingHours,
   wcKey,
-  type GrpStage,
   type TicketLike,
 } from '@bowson/shared';
 import { db, unwrap } from '../supabase.js';
@@ -28,7 +27,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .select('id, orderNumber, status, deadline, customer:customers(name), tickets:tickets(id,type,status,pct,netPrice,compParentId)')
         .is('deletedAt', null).is('tickets.deletedAt', null)
         .order('id', { ascending: false }).limit(8),
-      db.from('tickets').select('id, tn, detail, type, status, hrs, compParentId, wc, mouldId, orderId').is('deletedAt', null),
+      db.from('tickets').select('id, tn, detail, type, status, hrs, lamHrs, finHrs, compParentId, wc, mouldId, orderId').is('deletedAt', null),
       db.from('operatives').select('skills, defaultHrs').is('deletedAt', null),
       db.from('moulds').select('id, ref, status, notes').is('deletedAt', null),
     ]);
@@ -61,7 +60,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     const manHours = tickets
       .filter((t) => t.type !== 'RAW' && isLive(t.status))
-      .reduce((s, t) => s + (t.hrs || 0) * (STAGE_HRS_REMAINING[t.status as GrpStage] ?? 1), 0);
+      .reduce((s, t) => s + remainingHours(t), 0);
 
     // Hours remaining by stage (MADE/PART live work)
     const hoursByStageMap = new Map<string, number>();
@@ -79,7 +78,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     const maintenance = moulds.filter((m) => m.status === 'Maintenance').length;
     const inUseRows = unwrap(
       await db.from('tickets').select('mouldId').is('deletedAt', null)
-        .not('mouldId', 'is', null).in('status', ['4. Gel Coat', '5. Laminating']),
+        .not('mouldId', 'is', null).in('status', ['4. Gel Coat & Laminate']),
     ) as unknown as { mouldId: number }[];
     const mouldsInUse = new Set(inUseRows.map((r) => r.mouldId)).size;
     const mouldUtil = totalMoulds ? Math.round((mouldsInUse / totalMoulds) * 100) : 0;
@@ -91,7 +90,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     for (const t of tickets) {
       if (t.type === 'RAW' || !live.includes(t.status) || !t.wc) continue;
       if (!weekKeys.has(wcKey(t.wc))) continue;
-      committed8 += (t.hrs || 0) * (STAGE_HRS_REMAINING[t.status as GrpStage] ?? 1);
+      committed8 += remainingHours(t);
     }
     const totalCapacity8 = weeklyCapacity * 8;
     const utilisation8 = totalCapacity8 ? Math.round((committed8 / totalCapacity8) * 100) : 0;

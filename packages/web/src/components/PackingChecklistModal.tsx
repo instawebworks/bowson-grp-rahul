@@ -12,7 +12,7 @@ const DEFAULT_ITEMS: PackingItem[] = [
 
 /**
  * Packing checklist gate — ported from the prototype's showPackingChecklist.
- * Shown when a MADE / COMP ticket advances into "9. Packing": verify the
+ * Shown when a MADE / COMP ticket advances into "8. Packing": verify the
  * hardware, tick picked items, save the checklist + notes to the order, then
  * continue with the stage change (onConfirm).
  */

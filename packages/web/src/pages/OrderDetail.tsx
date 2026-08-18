@@ -5,7 +5,6 @@ import {
   GRP_STAGES,
   HRS_PER_DAY,
   LIVE_STATUSES,
-  STAGE_HRS_REMAINING,
   formatWc,
   isoDate,
   nextStage,
@@ -41,8 +40,8 @@ import { useAuth } from '../lib/auth';
 import { cureState, fmtCureMins, fmtDate, money } from '../lib/format';
 import type { Order, Ticket } from '../lib/types';
 
-const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
-const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
+const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat & Laminate'];
+const CURE_STAGES = ['4. Gel Coat & Laminate'];
 const CURE_PRESETS = [30, 60, 120, 240];
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
@@ -268,7 +267,7 @@ export function OrderDetail() {
       .map((tid) => {
         const t = (order?.tickets ?? []).find((x) => x.id === tid);
         if (!t || t.type === 'RAW' || t.status === bulkStage) return null;
-        return { id: tid, stage: bulkStage, needsQcRef: bulkStage === '9. Packing' && !t.qcRef };
+        return { id: tid, stage: bulkStage, needsQcRef: bulkStage === '8. Packing' && !t.qcRef };
       })
       .filter(Boolean) as { id: number; stage: string; needsQcRef: boolean }[];
     startBulk(moves, `Move ${moves.length} ticket${moves.length !== 1 ? 's' : ''} to "${bulkStage}"`);
@@ -281,7 +280,7 @@ export function OrderDetail() {
         const t = (order?.tickets ?? []).find((x) => x.id === tid);
         const ns = t && t.type !== 'RAW' ? nextStage(t.status) : null;
         if (!t || !ns) return null;
-        return { id: tid, stage: ns, needsQcRef: ns === '9. Packing' && !t.qcRef };
+        return { id: tid, stage: ns, needsQcRef: ns === '8. Packing' && !t.qcRef };
       })
       .filter(Boolean) as { id: number; stage: string; needsQcRef: boolean }[];
     startBulk(moves, `Advance ${moves.length} ticket${moves.length !== 1 ? 's' : ''} one stage`);
@@ -617,7 +616,6 @@ function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTick
 
   const totalHrs = orderTickets.reduce((s, t) => s + (t.hrs || 0), 0);
   const ops = operatives ?? [];
-  const weights: Record<string, number> = settings?.stageWeights ?? STAGE_HRS_REMAINING;
 
   const suggestion = useMemo(
     () =>
@@ -625,10 +623,9 @@ function SuggestSchedulePanel({ order, orderTickets }: { order: Order; orderTick
         ops,
         allTickets: allTickets ?? [],
         totalHrs,
-        weights,
         excludeOrderId: order.id,
       }),
-    [allTickets, ops, order.id, totalHrs, weights],
+    [allTickets, ops, order.id, totalHrs],
   );
 
   if (!orderTickets.length) return null;

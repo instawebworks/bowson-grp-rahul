@@ -122,7 +122,7 @@ export function InProduction() {
 
   // Assembly availability gate: parts count as "done" for a COMP once they
   // reach Assembly (assembly happens before QC — client snag #4).
-  const asmIdx = stageIndex('7. Assembly');
+  const asmIdx = stageIndex('6. Assembly');
 
   return (
     <>

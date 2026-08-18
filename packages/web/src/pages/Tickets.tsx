@@ -164,7 +164,7 @@ export function Tickets() {
       setGate({ kind: 'blocked', message: 'Tick at least one ticket using the checkboxes on the left.' });
       return;
     }
-    const qcIdx = stageIndex('8. QC Check');
+    const qcIdx = stageIndex('7. QC Check');
     const targetIdx = stageIndex(bulkStage);
     const eligible = toMove.filter((t) => {
       if (t.type === 'RAW') return false;
@@ -183,7 +183,7 @@ export function Tickets() {
       return;
     }
     // QC-ref gate when moving into Packing (ported: needsQC).
-    const needsQC = eligible.filter((t) => bulkStage === '9. Packing' && !t.qcRef).map((t) => t.id);
+    const needsQC = eligible.filter((t) => bulkStage === '8. Packing' && !t.qcRef).map((t) => t.id);
     if (needsQC.length) {
       setQcRefValue('');
       setGate({ kind: 'qcref', ids: eligible.map((t) => t.id), needsQC, target: bulkStage });
@@ -461,7 +461,7 @@ export function Tickets() {
             )}
             {slice.map(({ ticket: t, child }) => {
               const o = t.order;
-              const asmIdx = stageIndex('7. Assembly');
+              const asmIdx = stageIndex('6. Assembly');
               const parts = t.type === 'COMP' ? all.filter((p) => p.compParentId === t.id) : [];
               const partsDone = parts.filter((p) => stageIndex(p.status) >= asmIdx).length;
               const parent = t.compParentId != null ? all.find((x) => x.id === t.compParentId) : null;

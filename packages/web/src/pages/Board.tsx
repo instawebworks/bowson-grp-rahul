@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   PointerSensor,
@@ -10,14 +9,13 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { GRP_STAGES, LIVE_STATUSES, nextStage } from '@bowson/shared';
+import { GRP_STAGES, LIVE_STATUSES } from '@bowson/shared';
 import {
   useAssignTicket,
   useBoardRealtime,
   useBoardStatusChange,
   useBoardTickets,
   useCatalogue,
-  useConfirmCure,
   useOperatives,
   useSetCure,
   useToggleTimer,
@@ -26,7 +24,7 @@ import { apiClient } from '../lib/api';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { Spinner } from '../components/ui';
-import { cureState, daysToDeadline, fmtCureMins, fmtElapsed, initials } from '../lib/format';
+import { daysToDeadline, fmtElapsed, initials } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
 
 type View = 'stage' | 'ops';
@@ -45,27 +43,20 @@ const KB_PALETTES = [
   { bg: '#f0fbed', border: '#3a8a20', header: '#3a8a20', text: '#1a4400' }, // Lime
 ];
 
-const CURE_PRESETS = [
-  { label: '30 min', mins: 30 },
-  { label: '1 hour', mins: 60 },
-  { label: '2 hours', mins: 120 },
-  { label: '4 hours', mins: 240 },
-];
 
-const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
+const CURE_STAGES = ['4. Gel Coat & Laminate'];
 
 // Stage columns with the prototype's KB_COLS colours. Spec/Materials are flagged.
 const KB_COLS: { key: string; label: string; color: string; warn?: boolean }[] = [
   { key: '1. Spec Required', label: 'Spec Required', color: '#534AB7', warn: true },
   { key: '2. Materials Required', label: 'Materials', color: '#a86e0a', warn: true },
   { key: '3. Queue - Awaiting Mould', label: 'Queue - Awaiting Mould', color: '#8a5200' },
-  { key: '4. Gel Coat', label: 'Gel Coat', color: '#7a4800' },
-  { key: '5. Laminating', label: 'Laminating', color: '#8b3800' },
-  { key: '6. Trim & Finish', label: 'Trim & Finish', color: '#7a3000' },
-  { key: '7. Assembly', label: 'Assembly', color: '#0c6b50' },
-  { key: '8. QC Check', label: 'QC Check', color: '#1558a0' },
-  { key: '9. Packing', label: 'Packing', color: '#2e6810' },
-  { key: '10. Ready to Despatch', label: 'Ready to Despatch', color: '#0f4f8a' },
+  { key: '4. Gel Coat & Laminate', label: 'Gel Coat & Laminate', color: '#7a4800' },
+  { key: '5. Trim & Finish', label: 'Trim & Finish', color: '#7a3000' },
+  { key: '6. Assembly', label: 'Assembly', color: '#0c6b50' },
+  { key: '7. QC Check', label: 'QC Check', color: '#1558a0' },
+  { key: '8. Packing', label: 'Packing', color: '#2e6810' },
+  { key: '9. Ready to Despatch', label: 'Ready to Despatch', color: '#0f4f8a' },
 ];
 
 const TYPE_BORDER: Record<string, string> = {
@@ -87,7 +78,6 @@ export function Board() {
   useBoardRealtime();
 
   const setCure = useSetCure();
-  const confirmCure = useConfirmCure();
 
   const [view, setView] = useState<View>('stage');
   const [scrollLock, setScrollLock] = useState(true);
@@ -100,10 +90,8 @@ export function Board() {
   const [bulkStage, setBulkStage] = useState<string | null>(null);
   const [bulkSel, setBulkSel] = useState<Set<number>>(new Set());
 
-  // Right-click context menu / cure prompt / cure modal / drag gates / lightbox
+  // Right-click context menu / drag gates / lightbox
   const [ctx, setCtx] = useState<{ x: number; y: number; ticketId: number } | null>(null);
-  const [curePrompt, setCurePrompt] = useState<{ ticketId: number; targetStage: string; move: boolean } | null>(null);
-  const [cureModal, setCureModal] = useState<{ ticketId: number; expired: boolean } | null>(null);
   const [dragGate, setDragGate] = useState<
     | { kind: 'qcref'; ticketId: number; targetStage: string }
     | { kind: 'warn'; ticketId: number; targetStage: string; fromStage: string }
@@ -112,12 +100,6 @@ export function Board() {
   const [qcRefValue, setQcRefValue] = useState('');
   const [lightbox, setLightbox] = useState<string | null>(null);
   const { data: catalogue } = useCatalogue();
-  const qc = useQueryClient();
-  const refreshBoard = () => {
-    qc.invalidateQueries({ queryKey: ['board-tickets'] });
-    qc.invalidateQueries({ queryKey: ['tickets'] });
-    qc.invalidateQueries({ queryKey: ['ticket'] });
-  };
 
   /** Catalogue default cure minutes for a ticket entering a cure stage
    * (ported from openCureTimerPrompt's template lookup). */
@@ -126,7 +108,7 @@ export function Board() {
     const tpl = t
       ? (catalogue ?? []).find((c) => c.name === t.detail || c.parts.some((p) => p.detail === t.detail))
       : undefined;
-    if (stage === '4. Gel Coat') return tpl?.gelCureMins || 60;
+    if (stage === '4. Gel Coat & Laminate') return tpl?.gelCureMins || 60;
     return tpl?.lamCureMins || 120;
   }
 
@@ -170,7 +152,7 @@ export function Board() {
       const t = live.find((x) => x.id === ticketId);
       if (!t || t.status === status) return;
       // QC-ref gate: QC Check → Packing without a reference (ported from kbDrop).
-      if (t.status === '8. QC Check' && status === '9. Packing' && !t.qcRef) {
+      if (t.status === '7. QC Check' && status === '8. Packing' && !t.qcRef) {
         setQcRefValue('');
         setDragGate({ kind: 'qcref', ticketId, targetStage: status });
         return;
@@ -192,14 +174,22 @@ export function Board() {
     doMove(t.id, targetStage);
   }
 
-  /** Final move: cure prompt when entering a cure stage, else straight move. */
+  /** Final move. Entering the cure stage silently starts the catalogue-default
+   * cure clock — no prompt, no card nag (client point 7: the laminators don't
+   * want the curing step in their flow). The clock still feeds the Mould
+   * Board's occupancy/"when can this mould be re-loaded" display. */
   function doMove(ticketId: number, targetStage: string) {
     setDragGate(null);
-    if (CURE_STAGES.includes(targetStage)) {
-      setCurePrompt({ ticketId, targetStage, move: true });
-      return;
-    }
-    changeStatus.mutate({ ticketId, status: targetStage });
+    changeStatus.mutate(
+      { ticketId, status: targetStage },
+      {
+        onSuccess: () => {
+          if (CURE_STAGES.includes(targetStage)) {
+            setCure.mutate({ ticketId, mins: cureDefaultFor(ticketId, targetStage) });
+          }
+        },
+      },
+    );
   }
 
   /** QC-ref gate confirmed: save the ref, then continue the move chain. */
@@ -210,18 +200,6 @@ export function Board() {
     const t = live.find((x) => x.id === ticketId);
     setDragGate(null);
     if (t) applyMove(t, targetStage);
-  }
-
-  /** Cure prompt confirmed: (optionally) move the card, then start the timer
-   * targeting the next stage — matching the order-detail cure behaviour. */
-  function startCure(mins: number) {
-    if (!curePrompt) return;
-    const { ticketId, targetStage, move } = curePrompt;
-    setCurePrompt(null);
-    const apply = () =>
-      setCure.mutate({ ticketId, mins, targetStage: nextStage(targetStage) ?? undefined });
-    if (move) changeStatus.mutate({ ticketId, status: targetStage }, { onSuccess: apply });
-    else apply();
   }
 
   function toggleBulk(id: number) {
@@ -272,7 +250,6 @@ export function Board() {
       e.stopPropagation();
       setCtx({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 320), ticketId: id });
     },
-    onCureClick: (id: number, expired: boolean) => setCureModal({ ticketId: id, expired }),
     onImage: (src: string) => setLightbox(src),
     parentFor: (compParentId: number) => (data ?? []).find((x) => x.id === compParentId),
     onTimerToggle: (ticketId: number, operativeId: number, action: 'start' | 'stop') =>
@@ -459,16 +436,6 @@ export function Board() {
         />
       )}
 
-      {/* Cure timer prompt on drop into Gel Coat / Laminating */}
-      {curePrompt && (
-        <CurePromptModal
-          stage={curePrompt.targetStage}
-          defaultMins={cureDefaultFor(curePrompt.ticketId, curePrompt.targetStage)}
-          onConfirm={startCure}
-          onCancel={() => setCurePrompt(null)}
-        />
-      )}
-
       {/* QC-ref gate on drag QC Check → Packing (ported from kbDrop) */}
       {dragGate?.kind === 'qcref' && (
         <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setDragGate(null)}>
@@ -521,74 +488,6 @@ export function Board() {
         </div>
       )}
 
-      {/* Cure modal — active (progress + Ready now) or expired (Confirm / Touch Up / More time) */}
-      {cureModal && (() => {
-        const t = live.find((x) => x.id === cureModal.ticketId);
-        if (!t) return null;
-        const cure = cureState(t, now);
-        return (
-          <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={() => setCureModal(null)}>
-            <div className="w-[360px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
-              {cure && !cure.expired ? (
-                <>
-                  <div className="mb-1.5 text-[13px] font-bold text-white">⏱ Curing — #{t.tn ?? 'TBC'}</div>
-                  <p className="mb-2 text-[11px] text-[#aaa]">{fmtCureMins(cure.remainingMin)} remaining of {fmtCureMins(t.cureMins ?? 0)}.</p>
-                  <div className="mb-3 h-1.5 rounded-full bg-[#333]">
-                    <div
-                      className="h-full rounded-full bg-[#fbbf24]"
-                      style={{ width: `${Math.min(100, Math.round(((t.cureMins ?? 0) - cure.remainingMin) / Math.max(1, t.cureMins ?? 1) * 100))}%` }}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { confirmCure.mutate({ ticketId: t.id }); setCureModal(null); }}
-                      className="flex-1 rounded-md bg-teal px-3 py-2 text-[11px] font-bold text-white"
-                    >
-                      ✓ Ready now
-                    </button>
-                    <button onClick={() => setCureModal(null)} className="flex-1 rounded-md border border-[#444] bg-[#333] px-3 py-2 text-[11px] text-[#ccc]">
-                      Close
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="mb-1.5 text-[13px] font-bold text-white">✓ Cure complete — #{t.tn ?? 'TBC'}</div>
-                  <p className="mb-3 text-[11px] text-[#aaa]">
-                    Inspect the part. Confirm to advance{t.cureTargetStage ? ` to ${t.cureTargetStage}` : ''}, touch up if it needs
-                    more material, or restart the timer.
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setCureModal(null); setCurePrompt({ ticketId: t.id, targetStage: t.status, move: false }); }}
-                      className="flex-1 rounded-md border border-[#666] bg-[#333] px-2 py-2 text-[10px] font-semibold text-[#fbbf24]"
-                    >
-                      ⏱ More Time
-                    </button>
-                    <button
-                      onClick={() => {
-                        void apiClient.post(`/api/tickets/${t.id}/cure/clear`, { advance: false }).then(() => {
-                          setCureModal(null);
-                          refreshBoard();
-                        });
-                      }}
-                      className="flex-1 rounded-md border border-[#3b82f6]/40 bg-[#3b82f6]/10 px-2 py-2 text-[10px] font-bold text-[#3b82f6]"
-                    >
-                      🔧 Touch Up
-                    </button>
-                    <button
-                      onClick={() => { confirmCure.mutate({ ticketId: t.id }); setCureModal(null); }}
-                      className="flex-1 rounded-md bg-teal px-2 py-2 text-[10px] font-bold text-white"
-                    >
-                      ✓ Ready — Advance
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Theme-image lightbox (ported from viewThemeImage) */}
       {lightbox && (
@@ -617,7 +516,6 @@ interface CardProps {
   onBulkToggle: (id: number) => void;
   onOpen: (id: number) => void;
   onContext: (e: React.MouseEvent, id: number) => void;
-  onCureClick: (id: number, expired: boolean) => void;
   onImage: (src: string) => void;
   parentFor: (compParentId: number) => Ticket | undefined;
   onTimerToggle: (ticketId: number, operativeId: number, action: 'start' | 'stop') => void;
@@ -742,7 +640,6 @@ function KbCard({
   onBulkToggle,
   onOpen,
   onContext,
-  onCureClick,
   onImage,
   parentFor,
   onTimerToggle,
@@ -765,7 +662,6 @@ function KbCard({
   const openSession =
     opId != null ? (ticket.time ?? []).find((s) => s.operativeId === opId && s.end == null) : undefined;
   const elapsed = openSession ? now - new Date(openSession.start).getTime() : 0;
-  const cure = cureState(ticket, now);
 
   const isM2 = ticket.resinType === 'M2' || ticket.order?.resinType === 'M2';
   const parent = ticket.compParentId != null ? parentFor(ticket.compParentId) : undefined;
@@ -876,16 +772,6 @@ function KbCard({
             >
               unassigned
             </button>
-          )}
-          {cure && (
-            <span
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onCureClick(ticket.id, cure.expired); }}
-              className={`cursor-pointer rounded px-1.5 py-0.5 text-[9px] font-semibold ${cure.expired ? 'bg-red/20 text-[#dc2626]' : 'bg-amber/20 text-[#a86010]'}`}
-              title={cure.expired ? 'Cure done — confirm / touch up / extend' : 'Curing — click for progress'}
-            >
-              {cure.expired ? '✓ cure done' : `⏱ ${fmtCureMins(cure.remainingMin)}`}
-            </span>
           )}
           {totalMs > 0 && (
             <span className="ml-auto rounded bg-black/10 px-1.5 py-0.5 text-[8px] font-bold" style={{ color: pal.header }}>
@@ -1024,73 +910,3 @@ function KbContextMenu({
   );
 }
 
-// ─── Cure timer prompt on drop into a cure stage (ported) ────────────────────
-function CurePromptModal({
-  stage,
-  defaultMins,
-  onConfirm,
-  onCancel,
-}: {
-  stage: string;
-  /** Catalogue per-product default (gel/lam cure mins), else the stage default. */
-  defaultMins: number;
-  onConfirm: (mins: number) => void;
-  onCancel: () => void;
-}) {
-  const [mins, setMins] = useState(defaultMins);
-  const [custom, setCustom] = useState(false);
-  const stageName = stage.replace(/^\d+\.\s*/, '');
-
-  return (
-    <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/60" onClick={onCancel}>
-      <div className="w-[360px] rounded-xl border border-[#444] bg-[#1e1c1a] p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-1.5 text-[13px] font-bold text-white">⏱ Set {stageName} cure time</div>
-        <p className="mb-3 text-[11px] text-[#aaa]">
-          How long does this need to cure before it can be checked? The ticket will be held until the timer expires.
-        </p>
-        <div className="mb-3 flex flex-wrap gap-2">
-          {CURE_PRESETS.map((p) => (
-            <button
-              key={p.mins}
-              onClick={() => { setMins(p.mins); setCustom(false); }}
-              className={`rounded-lg border-2 px-3 py-2 text-xs font-bold ${
-                !custom && mins === p.mins ? 'border-teal bg-[#0c6b5033] text-[#4ade80]' : 'border-[#444] bg-[#242220] text-[#aaa]'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setCustom(true)}
-            className={`rounded-lg border-2 px-3 py-2 text-xs font-bold ${
-              custom ? 'border-teal bg-[#0c6b5033] text-[#4ade80]' : 'border-[#444] bg-[#242220] text-[#aaa]'
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-        {custom && (
-          <div className="mb-3 flex items-center gap-2">
-            <label className="text-xs font-semibold text-[#aaa]">Minutes:</label>
-            <input
-              type="number"
-              min={5}
-              max={480}
-              step={5}
-              value={mins}
-              onChange={(e) => setMins(Math.max(5, Number(e.target.value) || defaultMins))}
-              className="w-20 rounded-md border border-[#444] bg-[#242220] px-2 py-1.5 text-sm text-white outline-none focus:border-teal"
-            />
-          </div>
-        )}
-        <p className="mb-3 text-[10px] text-[#777]">⚠ The operative will be clocked off — they'll be reminded to inspect when the timer expires.</p>
-        <div className="flex justify-end gap-2">
-          <button onClick={onCancel} className="rounded-md border border-[#444] bg-[#333] px-3 py-1.5 text-xs text-[#ccc]">Cancel</button>
-          <button onClick={() => onConfirm(mins)} className="rounded-md bg-teal px-4 py-1.5 text-xs font-bold text-white">
-            Start Timer →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

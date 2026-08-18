@@ -20,8 +20,8 @@ import { EditTicketModal } from './EditTicketModal';
 import { SpecModal } from './SpecModal';
 import { cureState, fmtCureMins, fmtElapsed, initials, money } from '../lib/format';
 
-const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating'];
-const CURE_STAGES = ['4. Gel Coat', '5. Laminating'];
+const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat & Laminate'];
+const CURE_STAGES = ['4. Gel Coat & Laminate'];
 const CURE_PRESETS = [30, 60, 120, 240];
 
 export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onClose: () => void }) {

@@ -12,7 +12,7 @@ import { cureState, fmtCureMins } from '../lib/format';
 import type { Catalogue, Mould, Ticket } from '../lib/types';
 
 type Tab = 'register' | 'board' | 'unassigned' | 'schedule' | 'unlinked';
-const ACTIVE_STAGES = ['4. Gel Coat', '5. Laminating'];
+const ACTIVE_STAGES = ['4. Gel Coat & Laminate'];
 const QUEUE = '3. Queue - Awaiting Mould';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -421,10 +421,9 @@ function TicketLine({
 
 // ─── Schedule (3-week mould-usage calendar) ──────────────────────────────────
 const STAGE_COLOR: Record<string, string> = {
-  '4. Gel Coat': '#f97316',
-  '5. Laminating': '#a855f7',
+  '4. Gel Coat & Laminate': '#f97316',
 };
-const DONE_STAGES = ['Despatched', '10. Ready to Despatch', 'Completed', 'Order Cancelled', 'Cancelled'];
+const DONE_STAGES = ['Despatched', '9. Ready to Despatch', 'Completed', 'Order Cancelled', 'Cancelled'];
 
 function ScheduleTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {
   const [offset, setOffset] = useState(0);

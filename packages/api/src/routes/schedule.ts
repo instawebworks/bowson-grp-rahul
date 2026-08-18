@@ -2,13 +2,12 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   LIVE_STATUSES,
   PLANNER_WEEKS,
-  STAGE_HRS_REMAINING,
   formatWc,
   nextWeeks,
   opWeekTotal,
   wcKey,
   weekCapacityFor,
-  type GrpStage,
+  remainingHours,
   type OperativeHoursLike,
 } from '@bowson/shared';
 import { db, unwrap } from '../supabase.js';
@@ -25,18 +24,17 @@ export const scheduleRoutes: FastifyPluginAsync = async (app) => {
     const weeklyCapacity = operatives.reduce((sum, op) => sum + opWeekTotal(op, ''), 0);
 
     const tickets = unwrap(
-      await db.from('tickets').select('hrs, status, wc')
+      await db.from('tickets').select('hrs, lamHrs, finHrs, status, wc')
         .is('deletedAt', null).in('status', [...LIVE_STATUSES]).not('wc', 'is', null),
-    ) as { hrs: number; status: string; wc: string | null }[];
+    ) as { hrs: number; lamHrs: number | null; finHrs: number | null; status: string; wc: string | null }[];
 
     // committed (remaining) hours per week key
     const committed = new Map<string, { hrs: number; count: number }>();
     for (const t of tickets) {
       const key = wcKey(t.wc);
       if (!key) continue;
-      const frac = STAGE_HRS_REMAINING[t.status as GrpStage] ?? 1;
       const cur = committed.get(key) ?? { hrs: 0, count: 0 };
-      cur.hrs += (t.hrs || 0) * frac;
+      cur.hrs += remainingHours(t);
       cur.count += 1;
       committed.set(key, cur);
     }

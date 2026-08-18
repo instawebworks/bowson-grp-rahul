@@ -32,7 +32,7 @@ async function isMouldFree(mouldId: number): Promise<boolean> {
   if (!mould || mould.status === 'Maintenance') return false;
   const active = unwrap(
     await db.from('tickets').select('id')
-      .eq('mouldId', mouldId).in('status', ['4. Gel Coat', '5. Laminating']).is('deletedAt', null),
+      .eq('mouldId', mouldId).in('status', ['4. Gel Coat & Laminate']).is('deletedAt', null),
   ) as { id: number }[];
   return active.length < (mould.qty || 1);
 }
@@ -243,8 +243,8 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     const update: Record<string, unknown> = { mouldId: body.mouldId };
     let autoAdvanced = false;
     if (t.status === '3. Queue - Awaiting Mould' && (await isMouldFree(body.mouldId))) {
-      update.status = '4. Gel Coat';
-      update.pct = AUTO_PCT['4. Gel Coat'];
+      update.status = '4. Gel Coat & Laminate';
+      update.pct = AUTO_PCT['4. Gel Coat & Laminate'];
       autoAdvanced = true;
     }
     unwrap(await db.from('tickets').update(update).eq('id', id).select('id'));
@@ -252,7 +252,7 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
       unwrap(
         await db.from('audit_log').insert({
           entityType: 'ticket', entityId: id, field: 'status',
-          fromValue: '3. Queue - Awaiting Mould', toValue: '4. Gel Coat',
+          fromValue: '3. Queue - Awaiting Mould', toValue: '4. Gel Coat & Laminate',
           note: 'Auto-advanced — mould was free',
         }).select('id'),
       );
@@ -325,7 +325,7 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
   // Bulk despatch from the Ready to Despatch screen (ported from
   // despatchSelected → _proceedDespatch → doDespatching). Gates:
   //  1. COMP family gate — every member of a selected assembly's family must be
-  //     at "10. Ready to Despatch" (409 gate:'family' unless managerOverride).
+  //     at "9. Ready to Despatch" (409 gate:'family' unless managerOverride).
   //  2. Partial despatch — if an order's top-level non-RAW tickets aren't all
   //     covered by the selection, 409 gate:'partial' unless confirmPartial;
   //     despatched tickets are then flagged partialDespatch.
@@ -471,14 +471,14 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     }
     unwrap(
       await db.from('tickets').update({
-        status: '8. QC Check', pct: AUTO_PCT['8. QC Check'] ?? 85,
+        status: '7. QC Check', pct: AUTO_PCT['7. QC Check'] ?? 85,
         despatchDate: null, completed: null, partialDespatch: false, managerOverride: false,
       }).eq('id', id).select('id'),
     );
     unwrap(
       await db.from('audit_log').insert({
         entityType: 'ticket', entityId: id, field: 'status',
-        fromValue: 'Despatched', toValue: '8. QC Check',
+        fromValue: 'Despatched', toValue: '7. QC Check',
         note: 'Manager override — returned to production',
       }).select('id'),
     );

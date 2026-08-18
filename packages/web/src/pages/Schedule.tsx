@@ -61,27 +61,16 @@ export function Schedule() {
   const curKey = isoDate(mondayOf(new Date()));
   const todayIdx = todayDayIdx();
 
-  // Weeks to show: the 16-week planner horizon + any weeks that have tickets.
-  const weeks = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const wc of nextWeeks(PLANNER_WEEKS)) labels.set(wcKey(wc), wc);
-    for (const t of allTickets) {
-      if (HIDDEN.includes(t.status)) continue;
-      const key = ticketWeekKey(t, curKey);
-      if (key && !labels.has(key)) labels.set(key, formatWc(new Date(key)));
-    }
-    return [...labels.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, label]) => ({ key, label }));
-  }, [allTickets, curKey]);
-
   // ── Phase 2 labour buckets (replaces the stage-completion weightings) ──
   // Laminating = at-the-mould work, outstanding until the ticket leaves the
-  // laminating stages; Finishing = trim → packing, outstanding until Ready to
+  // laminating stage; Finishing = trim → packing, outstanding until Ready to
   // Despatch. Pre-split tickets (lamHrs null) count fully as Laminating.
-  const LAM_SKILLS = ['4. Gel Coat', '5. Laminating'];
-  const FIN_SKILLS = ['6. Trim & Finish', '7. Assembly', '8. QC Check', '9. Packing'];
-  const lamStageMax = stageIndex('5. Laminating');
-  const rtdIdx = stageIndex('10. Ready to Despatch');
+  const LAM_SKILLS = ['4. Gel Coat & Laminate'];
+  const FIN_SKILLS = ['5. Trim & Finish', '6. Assembly', '7. QC Check', '8. Packing'];
+  const lamStageMax = stageIndex('4. Gel Coat & Laminate');
+  const rtdIdx = stageIndex('9. Ready to Despatch');
   const r1 = (n: number) => Math.round(n * 10) / 10;
+  const MAX_WEEKS = 52;
 
   /** An operative's weekly hours split between the two pools by skill; both
    * skills = 50/50 (their roster assigns one process per person per day —
@@ -103,6 +92,112 @@ export function Schedule() {
     return sum;
   };
 
+  /**
+   * Capacity-constrained spill-over allocation (client email, 20 Aug): a week
+   * can never hold more work than it has capacity for. Tickets are placed —
+   * whole — into the earliest week with room in the buckets they need
+   * (soonest deadline first, then ticket number), starting from their stored
+   * wc or the current week. What doesn't fit spills into following weeks.
+   * A ticket allocated past its deadline week is flagged late: the manager
+   * resolves that by adding capacity (day-hour cells above) or moving the
+   * deadline — never by overbooking a week.
+   */
+  const allocation = useMemo(() => {
+    // Week sequence + per-week remaining capacity, extended on demand.
+    const weekSeq: string[] = [];
+    const capSeq: { lam: number; fin: number }[] = [];
+    const capTotal: { lam: number; fin: number }[] = [];
+    for (let i = 0; i < MAX_WEEKS; i++) {
+      const d = new Date(curKey);
+      d.setDate(d.getDate() + i * 7);
+      const key = isoDate(d);
+      weekSeq.push(key);
+      let lam = 0;
+      let fin = 0;
+      for (const op of ops) {
+        const share = poolShare(op, opWeekHours(op, key));
+        lam += share.lam;
+        fin += share.fin;
+      }
+      capSeq.push({ lam, fin });
+      capTotal.push({ lam, fin });
+    }
+    const idxOfWeek = (key: string) => {
+      const i = weekSeq.indexOf(key);
+      return i === -1 ? (key < curKey ? 0 : weekSeq.length - 1) : i;
+    };
+
+    // Allocate: soonest order deadline first, then ticket number.
+    const sorted = allTickets
+      .filter((t) => !HIDDEN.includes(t.status))
+      .slice()
+      .sort((a, b) => {
+        const da = a.order?.deadline ?? a.deadline ?? '9999';
+        const db = b.order?.deadline ?? b.deadline ?? '9999';
+        if (da !== db) return da < db ? -1 : 1;
+        return (a.tn ?? Infinity) - (b.tn ?? Infinity);
+      });
+
+    const byWeek = new Map<string, { tickets: Ticket[]; late: Set<number>; lam: number; fin: number }>();
+    const bucket = (key: string) => {
+      let b = byWeek.get(key);
+      if (!b) {
+        b = { tickets: [], late: new Set(), lam: 0, fin: 0 };
+        byWeek.set(key, b);
+      }
+      return b;
+    };
+
+    for (const t of sorted) {
+      const idx = stageIndex(t.status);
+      const lamNeed = idx >= 0 && idx <= lamStageMax && LIVE.includes(t.status) ? (t.lamHrs ?? t.hrs ?? 0) : 0;
+      const finNeed = idx >= 0 && idx < rtdIdx && LIVE.includes(t.status) ? (t.finHrs ?? 0) : 0;
+      const startIdx = idxOfWeek(ticketWeekKey(t, curKey));
+
+      let placed = weekSeq.length - 1;
+      for (let i = startIdx; i < weekSeq.length; i++) {
+        const rem = capSeq[i]!;
+        const tot = capTotal[i]!;
+        // A bucket accepts the ticket if the remaining room covers it — or the
+        // ticket alone exceeds a full week (oversized), in which case it takes
+        // an untouched week rather than never landing.
+        const lamOk = lamNeed === 0 || rem.lam >= lamNeed || (lamNeed > tot.lam && rem.lam >= tot.lam && tot.lam > 0);
+        const finOk = finNeed === 0 || rem.fin >= finNeed || (finNeed > tot.fin && rem.fin >= tot.fin && tot.fin > 0);
+        if (lamOk && finOk) {
+          placed = i;
+          break;
+        }
+      }
+      const key = weekSeq[placed]!;
+      const rem = capSeq[placed]!;
+      rem.lam = Math.max(0, rem.lam - lamNeed);
+      rem.fin = Math.max(0, rem.fin - finNeed);
+      const b = bucket(key);
+      b.tickets.push(t);
+      b.lam += lamNeed;
+      b.fin += finNeed;
+      // Late = allocated week ends (Friday) after the deadline.
+      const dl = t.order?.deadline ?? t.deadline ?? null;
+      if (dl && (lamNeed > 0 || finNeed > 0)) {
+        const friday = new Date(key);
+        friday.setDate(friday.getDate() + 4);
+        if (isoDate(friday) > dl.slice(0, 10)) b.late.add(t.id);
+      }
+    }
+    return { byWeek, weekSeq };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTickets, ops, curKey, todayIdx]);
+
+  // Weeks to show: the 16-week planner horizon + any weeks that got allocations.
+  const weeks = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const wc of nextWeeks(PLANNER_WEEKS)) labels.set(wcKey(wc), wc);
+    for (const key of allocation.byWeek.keys()) {
+      if (!labels.has(key)) labels.set(key, formatWc(new Date(key)));
+    }
+    return [...labels.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, label]) => ({ key, label }));
+  }, [allocation]);
+
   // Per-week available hours per pool (day patterns + per-week overrides).
   const capacityFor = useMemo(() => {
     const map = new Map<string, { lam: number; fin: number; total: number }>();
@@ -121,19 +216,13 @@ export function Schedule() {
   }, [weeks, ops, curKey, todayIdx]);
 
   const committedFor = (key: string) => {
-    let lam = 0;
-    let fin = 0;
-    for (const t of allTickets) {
-      if (!LIVE.includes(t.status) || ticketWeekKey(t, curKey) !== key) continue;
-      const idx = stageIndex(t.status);
-      if (idx <= lamStageMax) lam += t.lamHrs ?? t.hrs ?? 0;
-      if (idx < rtdIdx) fin += t.finHrs ?? 0;
-    }
-    return { lam: Math.round(lam), fin: Math.round(fin), total: Math.round(lam + fin) };
+    const b = allocation.byWeek.get(key);
+    if (!b) return { lam: 0, fin: 0, total: 0 };
+    return { lam: Math.round(b.lam), fin: Math.round(b.fin), total: Math.round(b.lam + b.fin) };
   };
 
-  const ticketsFor = (key: string) =>
-    allTickets.filter((t) => !HIDDEN.includes(t.status) && ticketWeekKey(t, curKey) === key);
+  const ticketsFor = (key: string) => allocation.byWeek.get(key)?.tickets ?? [];
+  const lateFor = (key: string) => allocation.byWeek.get(key)?.late ?? new Set<number>();
 
   /** A past day can no longer be planned (ported from editOpDay's guard). */
   const isPastDay = (weekKey: string, di: number) =>
@@ -282,6 +371,7 @@ export function Schedule() {
               const finOver = com.fin > cap.fin && cap.fin > 0;
               const over = lamOver || finOver;
               const wk = ticketsFor(w.key);
+              const late = lateFor(w.key);
               const bucketBar = (label: string, c: number, k: number, isOver: boolean) => {
                 const pct = k > 0 ? Math.min(Math.round((c / k) * 100), 100) : 0;
                 const warn = c > k * 0.85 && !isOver;
@@ -316,9 +406,15 @@ export function Schedule() {
                       {bucketBar('Finishing', com.fin, cap.fin, finOver)}
                     </div>
                   )}
+                  {late.size > 0 && (
+                    <div className="mb-2 rounded-md border border-red/40 bg-red/5 px-2.5 py-1.5 text-[11px] font-semibold text-red">
+                      ⚠ {late.size} ticket{late.size !== 1 ? 's' : ''} won't meet the deadline at current capacity —
+                      add hours in the grid above or move the deadline out.
+                    </div>
+                  )}
                   {wk.length ? (
                     <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))' }}>
-                      {wk.map((t) => <TicketMini key={t.id} t={t} onOpen={() => setDetailId(t.id)} />)}
+                      {wk.map((t) => <TicketMini key={t.id} t={t} late={late.has(t.id)} onOpen={() => setDetailId(t.id)} />)}
                     </div>
                   ) : (
                     <div className="py-1 text-[11px] text-text3">No tickets scheduled this week</div>
@@ -346,14 +442,15 @@ export function Schedule() {
   );
 }
 
-function TicketMini({ t, onOpen }: { t: Ticket; onOpen: () => void }) {
+function TicketMini({ t, late, onOpen }: { t: Ticket; late?: boolean; onOpen: () => void }) {
   const s = TYPE_STYLE[t.type] ?? TYPE_STYLE.RAW!;
   const m2 = t.resinType === 'M2' || t.order?.resinType === 'M2';
   return (
-    <div onClick={onOpen} className="cursor-pointer rounded-md border border-border p-2 hover:bg-teal-l/30">
+    <div onClick={onOpen} className={`cursor-pointer rounded-md border p-2 hover:bg-teal-l/30 ${late ? 'border-red/50 bg-red/5' : 'border-border'}`}>
       <div className="mb-1 flex items-center gap-1.5">
         <span className="text-[11px] font-bold text-teal">#{t.tn ?? 'TBC'}</span>
         <span className="rounded px-1 py-0.5 text-[9px] font-bold" style={{ backgroundColor: s.bg, color: s.color }}>{t.type}</span>
+        {late && <span className="rounded bg-red/10 px-1 py-0.5 text-[9px] font-bold text-red">⚠ LATE</span>}
         {m2 && <span className="rounded bg-amber-l px-1 py-0.5 text-[9px] font-bold text-amber">M2</span>}
         <span className="ml-auto text-[11px] font-semibold text-text2">{t.hrs || 0}h</span>
       </div>

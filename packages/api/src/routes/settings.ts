@@ -1,6 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { STAGE_HRS_REMAINING } from '@bowson/shared';
 import { db, unwrap } from '../supabase.js';
 import { PARSE_FAILED, parse } from '../lib/validate.js';
 
@@ -17,7 +16,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     const rows = unwrap(await db.from('settings').select('key, value')) as { key: string; value: unknown }[];
     const stored = new Map(rows.map((r) => [r.key, r.value]));
     return {
-      stageWeights: { ...STAGE_HRS_REMAINING, ...((stored.get('stageWeights') as Record<string, number>) ?? {}) },
+      stageWeights: ((stored.get('stageWeights') as Record<string, number>) ?? {}),
       managerPin: (stored.get('managerPin') as string) ?? DEFAULT_MANAGER_PIN,
     };
   });
@@ -36,7 +35,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     const all = unwrap(await db.from('settings').select('key, value')) as { key: string; value: unknown }[];
     const stored = new Map(all.map((r) => [r.key, r.value]));
     return {
-      stageWeights: { ...STAGE_HRS_REMAINING, ...((stored.get('stageWeights') as Record<string, number>) ?? {}) },
+      stageWeights: ((stored.get('stageWeights') as Record<string, number>) ?? {}),
       managerPin: (stored.get('managerPin') as string) ?? DEFAULT_MANAGER_PIN,
     };
   });

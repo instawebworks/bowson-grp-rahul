@@ -3,27 +3,29 @@
 // Do NOT re-guess these values; they encode the real manufacturing workflow.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Live (in-production) GRP stages — excludes the terminal "Despatched". */
+/** Live (in-production) GRP stages — excludes the terminal "Despatched".
+ * Phase 2 (client point 7): Gel Coat + Laminating merged into one stage —
+ * the same laminators do both, physically one continuous job at the mould.
+ * The cutover migration rewrites existing ticket statuses to this list. */
 export const LIVE_STATUSES = [
   '1. Spec Required',
   '2. Materials Required',
   '3. Queue - Awaiting Mould',
-  '4. Gel Coat',
-  '5. Laminating',
-  '6. Trim & Finish',
-  '7. Assembly',
-  '8. QC Check',
-  '9. Packing',
-  '10. Ready to Despatch',
+  '4. Gel Coat & Laminate',
+  '5. Trim & Finish',
+  '6. Assembly',
+  '7. QC Check',
+  '8. Packing',
+  '9. Ready to Despatch',
 ] as const;
 
-/** Full ordered GRP manufacturing pipeline (11 stages incl. terminal). */
+/** Full ordered GRP manufacturing pipeline (10 stages incl. terminal). */
 export const GRP_STAGES = [...LIVE_STATUSES, 'Despatched'] as const;
 export type GrpStage = (typeof GRP_STAGES)[number];
 
 /** Short labels aligned by index with GRP_STAGES. */
 export const STAGE_SHORT = [
-  'Spec', 'Materials', 'Queue', 'Gel Coat', 'Lam', 'Trim',
+  'Spec', 'Materials', 'Queue', 'Gel & Lam', 'Trim',
   'Assembly', 'QC', 'Packing', 'Ready', 'Despatched',
 ] as const;
 
@@ -53,36 +55,26 @@ export type DespatchMethod = (typeof DESPATCH)[number];
 export const RESIN_TYPES = ['Standard', 'M2'] as const;
 export type ResinType = (typeof RESIN_TYPES)[number];
 
-/**
- * Fraction of labour hours REMAINING at the start of each stage — used for
- * deadline burndown. Pre-production stages = 1.00 (no work done yet).
- */
-export const STAGE_HRS_REMAINING: Record<GrpStage, number> = {
-  '1. Spec Required': 1.0,
-  '2. Materials Required': 1.0,
-  '3. Queue - Awaiting Mould': 1.0,
-  '4. Gel Coat': 0.85,
-  '5. Laminating': 0.65,
-  '6. Trim & Finish': 0.4,
-  '7. Assembly': 0.25,
-  '8. QC Check': 0.12,
-  '9. Packing': 0.05,
-  '10. Ready to Despatch': 0.01,
-  Despatched: 0.0,
-};
+// STAGE_HRS_REMAINING (stage-completion weightings) retired in phase 2 —
+// remaining labour is now the Laminating/Finishing bucket model (client
+// point 8): lamHrs outstanding until a ticket leaves Gel Coat & Laminate,
+// finHrs outstanding until Ready to Despatch.
+
+/** The stage boundaries of the two labour buckets. */
+export const LAM_STAGE = '4. Gel Coat & Laminate';
+export const RTD_STAGE = '9. Ready to Despatch';
 
 /** Auto-calculated progress percentage per status. */
 export const AUTO_PCT: Record<TicketStatus, number> = {
   '1. Spec Required': 0,
   '2. Materials Required': 10,
   '3. Queue - Awaiting Mould': 20,
-  '4. Gel Coat': 35,
-  '5. Laminating': 50,
-  '6. Trim & Finish': 63,
-  '7. Assembly': 72,
-  '8. QC Check': 85,
-  '9. Packing': 95,
-  '10. Ready to Despatch': 98,
+  '4. Gel Coat & Laminate': 45,
+  '5. Trim & Finish': 63,
+  '6. Assembly': 72,
+  '7. QC Check': 85,
+  '8. Packing': 95,
+  '9. Ready to Despatch': 98,
   Despatched: 100,
   Ordered: 0,
   Received: 100,
@@ -95,15 +87,18 @@ export const HRS_PER_DAY = 7.5;
 /**
  * Stages that require an operative skill (used for capacity-by-skill planning
  * and operative skill assignment). Must use FULL GRP_STAGES names with numbers.
+ * "Gel Coat & Laminate" = the Laminating labour pool; the rest = Finishing.
  */
 export const STAGE_SKILLS = [
-  '4. Gel Coat',
-  '5. Laminating',
-  '6. Trim & Finish',
-  '7. Assembly',
-  '8. QC Check',
-  '9. Packing',
+  '4. Gel Coat & Laminate',
+  '5. Trim & Finish',
+  '6. Assembly',
+  '7. QC Check',
+  '8. Packing',
 ] as const;
+
+/** Skills that put an operative in the Laminating capacity pool. */
+export const LAM_SKILLS: readonly string[] = ['4. Gel Coat & Laminate'];
 
 /** 10 T-Card colour palettes that rotate by order. */
 export const KB_PALETTES = [

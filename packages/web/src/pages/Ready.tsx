@@ -8,7 +8,7 @@ import { TicketDetailModal } from '../components/TicketDetailModal';
 import { buildDespatchHtml, openDocument } from '../lib/documents';
 import type { Ticket } from '../lib/types';
 
-const RTD = '10. Ready to Despatch';
+const RTD = '9. Ready to Despatch';
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -60,7 +60,7 @@ export function Ready() {
     const compBlocked = all.filter(
       (t) =>
         t.type === 'COMP' && t.compParentId == null &&
-        ['9. Packing', RTD].includes(t.status) && !familyReadyCheck(t, all).ready,
+        ['8. Packing', RTD].includes(t.status) && !familyReadyCheck(t, all).ready,
     );
     const partReady = all.filter((t) => t.type === 'PART' && t.status === RTD);
     return { despatchable: [...madeReady, ...compReady], compBlocked, partReady };

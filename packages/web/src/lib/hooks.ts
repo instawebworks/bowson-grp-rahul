@@ -376,7 +376,7 @@ export function useDespatchTickets() {
   });
 }
 
-/** Manager-PIN return of a despatched ticket to production (→ 8. QC Check). */
+/** Manager-PIN return of a despatched ticket to production (→ 7. QC Check). */
 export function useReturnToProduction() {
   const qc = useQueryClient();
   return useMutation({

@@ -20,8 +20,8 @@ type Tab = 'mine' | 'avail' | 'board';
 
 /** Stages an operative can pick work from when no skills are allocated. */
 const PROD_STAGES = [
-  '3. Queue - Awaiting Mould', '4. Gel Coat', '5. Laminating',
-  '6. Trim & Finish', '7. Assembly', '8. QC Check', '9. Packing',
+  '3. Queue - Awaiting Mould', '4. Gel Coat & Laminate',
+  '5. Trim & Finish', '6. Assembly', '7. QC Check', '8. Packing',
 ];
 
 const shortStage = (s: string) => s.replace(/^\d+\.\s*/, '');
@@ -90,7 +90,7 @@ export function ShopFloor() {
   const eligibleStages = mySkills.length > 0 ? mySkills : PROD_STAGES;
   const available = all.filter((t) => {
     if (t.type === 'RAW' || myOpenSession(t)) return false;
-    if (t.status === 'Despatched' || t.status === '10. Ready to Despatch') return false;
+    if (t.status === 'Despatched' || t.status === '9. Ready to Despatch') return false;
     return eligibleStages.includes(t.status);
   });
 

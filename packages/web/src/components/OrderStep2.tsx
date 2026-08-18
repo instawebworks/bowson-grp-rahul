@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ComponentProps } from 'react';
-import { RESIN_TYPES, STAGE_HRS_REMAINING, formatWc, wcForDeadline } from '@bowson/shared';
+import { RESIN_TYPES, formatWc, wcForDeadline } from '@bowson/shared';
 import {
   useAddTicket,
   useCatalogue,
@@ -89,10 +89,9 @@ export function OrderStep2({
         ops: operatives ?? [],
         allTickets: allTickets ?? [],
         totalHrs,
-        weights: settings?.stageWeights ?? STAGE_HRS_REMAINING,
         excludeOrderId: orderId,
       }),
-    [operatives, allTickets, totalHrs, settings, orderId],
+    [operatives, allTickets, totalHrs, orderId],
   );
   const weeksNeeded = totalHrs > 0 ? suggestion.weeksNeeded : 0;
   const suggestedWc = formatWc(new Date(suggestion.startKey));
