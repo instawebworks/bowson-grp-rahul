@@ -278,7 +278,7 @@ export function Ready() {
           <>
             <div className="mb-2 text-[11px] font-bold text-text2">● Items ready to despatch ({despatchable.length})</div>
             <Card className="mb-5">
-              <Table head={['', 'Ticket #', 'Type', 'Order', 'Customer', 'Detail', 'Theme / Spec', 'Qty', 'QC Ref', 'Despatch']}>
+              <Table head={['', 'Ticket #', 'Type', 'Order', 'Customer', 'Customer Ref', 'Detail', 'Theme / Spec', 'Qty', 'QC Ref', 'Despatch']}>
                 {groupedRows.map(({ ticket: t, first }) => (
                   <tr
                     key={t.id}
@@ -298,16 +298,12 @@ export function Ready() {
                     <td className="px-3 py-2">
                       {first ? <span className="font-medium">{t.order?.orderNumber ?? '—'}</span> : <span className="text-text3">↳</span>}
                     </td>
-                    <td className="px-3 py-2 text-[11px]">
-                      {/* Customer leads, ref beneath — the client prefers customer
-                          when space allows only one emphasis (snag #5). */}
-                      {first && (
-                        <>
-                          <span className="font-semibold">{t.order?.customer?.name ?? '—'}</span>
-                          <br />
-                          <span className="text-text3">{t.order?.siteName ?? ''}</span>
-                        </>
-                      )}
+                    {/* Customer and ref as separate columns (client email 20 Aug). */}
+                    <td className="max-w-30 truncate px-3 py-2 text-[11px] font-semibold">
+                      {first ? t.order?.customer?.name ?? '—' : ''}
+                    </td>
+                    <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text2">
+                      {first ? t.order?.siteName ?? '—' : ''}
                     </td>
                     <td className="max-w-42 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                     <td className="max-w-32 truncate px-3 py-2 text-[11px] text-text3">{t.spec ?? '—'}</td>
