@@ -1916,6 +1916,34 @@ all three tables.
 
 ---
 
+## 2026-08-21 — Client re-test feedback: drag preview + Ready customer visibility
+
+**Done**
+- Client emailed that the schedule spill-over and Ready customer column
+  "don't appear to have been done" and raised a follow-up on snag 6: the
+  card disappears while dragging on the T-Card board.
+- **Both "not done" items were already live** (built, cut over, verified) —
+  but with real causes for the confusion:
+  1. Ready to Despatch only showed the Customer/Customer Ref columns on the
+     despatchable-items table; with 0 despatchable items (the page's current
+     state — 3 waiting PARTs) no customer column was visible anywhere.
+     **Fixed:** Customer + Customer Ref added to the parts-waiting panel and
+     the blocked-assemblies panel, so the columns show in every page state.
+  2. The spill-over planner is live on /schedule — the client likely tested
+     before the phase-2 deploy or before the announcement email.
+- **Drag preview (snag 6 follow-up) — genuine bug, fixed:** the dragged
+  card moved by transform inside its column, so the column's overflow
+  clipped it the moment it left — "disappears when you move it". Now a
+  DragOverlay renders a floating copy that follows the cursor above all
+  columns (green dashed outline, drop shadow), while the source card stays
+  faded in place until the drop. Works in both board views.
+
+**Features added / modified**
+- T-Card board drag preview (DragOverlay); Ready page customer columns on
+  all three panels.
+
+---
+
 ## 2026-08-20 — CUTOVER: phase 2 merged to main and live
 
 **Done**

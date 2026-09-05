@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useDraggable,
   useDroppable,
@@ -92,6 +93,8 @@ export function Board() {
 
   // Right-click context menu / drag gates / lightbox
   const [ctx, setCtx] = useState<{ x: number; y: number; ticketId: number } | null>(null);
+  // The ticket currently being dragged — rendered as a floating copy in DragOverlay.
+  const [dragTicketId, setDragTicketId] = useState<number | null>(null);
   const [dragGate, setDragGate] = useState<
     | { kind: 'qcref'; ticketId: number; targetStage: string }
     | { kind: 'warn'; ticketId: number; targetStage: string; fromStage: string }
@@ -130,6 +133,7 @@ export function Board() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const live = useMemo(() => (data ?? []).filter(isLive), [data]);
+  const dragTicket = dragTicketId != null ? live.find((t) => t.id === dragTicketId) : undefined;
 
   // Stable order → palette assignment (ported from getOrderPalette).
   const paletteFor = useMemo(() => {
@@ -378,7 +382,15 @@ export function Board() {
             <div className="text-xs font-semibold">Loading board…</div>
           </div>
         ) : (
-        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <DndContext
+          sensors={sensors}
+          onDragStart={(e) => setDragTicketId(Number(e.active.id))}
+          onDragCancel={() => setDragTicketId(null)}
+          onDragEnd={(e) => {
+            setDragTicketId(null);
+            onDragEnd(e);
+          }}
+        >
           {view === 'stage'
             ? KB_COLS.map((col) => (
                 <StageColumn
@@ -409,6 +421,16 @@ export function Board() {
                   now={now}
                 />
               ))}
+          {/* Floating copy of the dragged card — follows the cursor above all
+              columns (a card moved by transform alone gets clipped by its
+              column's overflow, which is why cards "disappeared" mid-drag). */}
+          <DragOverlay dropAnimation={null}>
+            {dragTicket && (
+              <div className="w-[176px]">
+                <KbCard ticket={dragTicket} {...cardProps} overlay />
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
         )}
       </div>
@@ -647,14 +669,20 @@ function KbCard({
   opId,
   onTimer,
   showStage,
+  overlay,
 }: CardProps & {
   ticket: Ticket;
   opId?: number;
   onTimer?: (v: { ticketId: number; operativeId: number; action: 'start' | 'stop' }) => void;
   showStage?: boolean;
+  /** Rendered inside DragOverlay: the floating copy that follows the cursor. */
+  overlay?: boolean;
 }) {
-  const draggable = !bulkMode;
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: ticket.id, disabled: !draggable });
+  const draggable = !bulkMode && !overlay;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: overlay ? `overlay-${ticket.id}` : ticket.id,
+    disabled: !draggable,
+  });
   const border = TYPE_BORDER[ticket.type] ?? '#5c574f';
   const pal = paletteFor(ticket.orderId);
   const selected = bulkSel.has(ticket.id);
@@ -679,10 +707,13 @@ function KbCard({
   const anyLive = sessions.some((s) => s.end == null);
   const runningFor = (operativeId: number) => sessions.some((s) => s.operativeId === operativeId && s.end == null);
 
+  // The DragOverlay (portal) moves the floating copy — the source card stays
+  // put, faded, so it can't be clipped by the column's overflow (client snag
+  // 6 follow-up: the card must stay visible until dropped).
   const style = {
     background: pal.bg,
     borderLeft: `3px solid ${border}`,
-    ...(transform ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 } : {}),
+    ...(overlay ? { outline: '2px dashed #4ade80', outlineOffset: '2px' } : {}),
   };
 
   function onClick() {
@@ -700,7 +731,7 @@ function KbCard({
       onContextMenu={(e) => onContext(e, ticket.id)}
       className={`overflow-hidden rounded-md transition hover:brightness-105 ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${
         isDragging ? 'opacity-40' : ''
-      } ${selected ? 'ring-2 ring-teal' : ''}`}
+      } ${overlay ? 'cursor-grabbing shadow-2xl' : ''} ${selected ? 'ring-2 ring-teal' : ''}`}
     >
       {isM2 && (
         <div className="bg-[#7a4800] px-2 py-0.5 text-center text-[9px] font-bold tracking-wide text-white">

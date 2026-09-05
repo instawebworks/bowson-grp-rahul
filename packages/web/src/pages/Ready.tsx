@@ -326,7 +326,7 @@ export function Ready() {
           <>
             <div className="mb-2 text-[11px] font-bold text-amber">⚠ Assembly items blocked — parts not all at Ready to Despatch ({compBlocked.length})</div>
             <Card className="mb-5">
-              <Table head={['Ticket #', 'Order', 'Detail', 'Parts status', 'Override']}>
+              <Table head={['Ticket #', 'Order', 'Customer', 'Customer Ref', 'Detail', 'Parts status', 'Override']}>
                 {compBlocked.map((t) => {
                   const parts = all.filter((p) => p.compParentId === t.id);
                   const doneCount = parts.filter((p) => stageIndex(p.status) >= rtdIdx).length;
@@ -340,6 +340,8 @@ export function Ready() {
                           {t.order?.orderNumber ?? '—'}
                         </button>
                       </td>
+                      <td className="max-w-30 truncate px-3 py-2 text-[11px] font-semibold">{t.order?.customer?.name ?? '—'}</td>
+                      <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text2">{t.order?.siteName ?? '—'}</td>
                       <td className="max-w-50 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                       <td className="px-3 py-2 text-[11px]">
                         <span className="text-amber">{doneCount}/{parts.length} parts at Ready to Despatch</span>
@@ -375,7 +377,7 @@ export function Ready() {
           <>
             <div className="mb-2 text-[11px] font-bold text-text3">■ Part tickets at Ready to Despatch — despatch via parent Assembly ({partReady.length})</div>
             <Card className="mb-5">
-              <Table head={['Ticket #', 'Parent COMP', 'Order', 'Detail', 'Override']}>
+              <Table head={['Ticket #', 'Parent COMP', 'Order', 'Customer', 'Customer Ref', 'Detail', 'Override']}>
                 {partReady.map((t) => {
                   const parent = t.compParentId != null ? all.find((x) => x.id === t.compParentId) : null;
                   return (
@@ -391,6 +393,8 @@ export function Ready() {
                           {t.order?.orderNumber ?? '—'}
                         </button>
                       </td>
+                      <td className="max-w-30 truncate px-3 py-2 text-[11px] font-semibold">{t.order?.customer?.name ?? '—'}</td>
+                      <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text2">{t.order?.siteName ?? '—'}</td>
                       <td className="max-w-50 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                       <td className="px-3 py-2">
                         <Button variant="danger" onClick={() => setGate({ kind: 'override-pin', ticketId: t.id, tn: t.tn })}>
