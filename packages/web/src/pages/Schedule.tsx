@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  LIVE_STATUSES,
   PLANNER_WEEKS,
+  allocateWeeks,
   formatWc,
   getOpDayHrs,
   isoDate,
@@ -9,7 +9,6 @@ import {
   nextWeeks,
   opDayDefault,
   opWeekTotal,
-  stageIndex,
   todayDayIdx,
   wcKey,
 } from '@bowson/shared';
@@ -22,8 +21,6 @@ import type { Operative, Ticket } from '../lib/types';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const PRESETS = [0, 3.75, 4, 7.5, 10, 12];
-const LIVE = LIVE_STATUSES as readonly string[];
-const HIDDEN = ['Despatched', 'Completed', 'Order Cancelled', 'Cancelled'];
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   RAW: { bg: '#f0ede8', color: '#5c574f' },
@@ -31,19 +28,6 @@ const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
   COMP: { bg: '#e8f1fb', color: '#1558a0' },
   PART: { bg: '#f3f0fd', color: '#4a42b0' },
 };
-
-/** The production week key a ticket belongs to (client snag #1):
- *  - its stored wc, if one was set;
- *  - else the CURRENT week — new work joins this week's backlog (the prototype
- *    started orders in the earliest available week, not deadline − 14 days);
- *  - and never a week that has already passed: work can't happen in the past,
- *    so outstanding hours roll forward instead of sitting "booked" against
- *    expired weeks. */
-function ticketWeekKey(t: Ticket, curKey: string): string {
-  const k = wcKey(t.wc) || curKey;
-  if (k < curKey) return curKey;
-  return k;
-}
 
 export function Schedule() {
   const { data: operatives } = useOperatives();
@@ -61,132 +45,18 @@ export function Schedule() {
   const curKey = isoDate(mondayOf(new Date()));
   const todayIdx = todayDayIdx();
 
-  // ── Phase 2 labour buckets (replaces the stage-completion weightings) ──
-  // Laminating = at-the-mould work, outstanding until the ticket leaves the
-  // laminating stage; Finishing = trim → packing, outstanding until Ready to
-  // Despatch. Pre-split tickets (lamHrs null) count fully as Laminating.
-  const LAM_SKILLS = ['4. Gel Coat & Laminate'];
-  const FIN_SKILLS = ['5. Trim & Finish', '6. Assembly', '7. QC Check', '8. Packing'];
-  const lamStageMax = stageIndex('4. Gel Coat & Laminate');
-  const rtdIdx = stageIndex('9. Ready to Despatch');
-  const r1 = (n: number) => Math.round(n * 10) / 10;
-  const MAX_WEEKS = 52;
-
-  /** An operative's weekly hours split between the two pools by skill; both
-   * skills = 50/50 (their roster assigns one process per person per day —
-   * without that signal an even split is the fair default). Unskilled ops
-   * count as Finishing (general labour). */
-  const poolShare = (op: Operative, hrs: number) => {
-    const hasLam = op.skills.some((s) => LAM_SKILLS.includes(s));
-    const hasFin = op.skills.some((s) => FIN_SKILLS.includes(s));
-    if (hasLam && hasFin) return { lam: hrs / 2, fin: hrs / 2 };
-    if (hasLam) return { lam: hrs, fin: 0 };
-    return { lam: 0, fin: hrs };
-  };
-
-  /** Week hours for an op — the current week only counts today onwards. */
-  const opWeekHours = (op: Operative, key: string) => {
-    if (key !== curKey) return opWeekTotal(op, key);
-    let sum = 0;
-    for (let di = todayIdx; di < 5; di++) sum += getOpDayHrs(op, key, di);
-    return sum;
-  };
-
-  /**
-   * Capacity-constrained spill-over allocation (client email, 20 Aug): a week
-   * can never hold more work than it has capacity for. Tickets are placed —
-   * whole — into the earliest week with room in the buckets they need
-   * (soonest deadline first, then ticket number), starting from their stored
-   * wc or the current week. What doesn't fit spills into following weeks.
-   * A ticket allocated past its deadline week is flagged late: the manager
-   * resolves that by adding capacity (day-hour cells above) or moving the
-   * deadline — never by overbooking a week.
-   */
-  const allocation = useMemo(() => {
-    // Week sequence + per-week remaining capacity, extended on demand.
-    const weekSeq: string[] = [];
-    const capSeq: { lam: number; fin: number }[] = [];
-    const capTotal: { lam: number; fin: number }[] = [];
-    for (let i = 0; i < MAX_WEEKS; i++) {
-      const d = new Date(curKey);
-      d.setDate(d.getDate() + i * 7);
-      const key = isoDate(d);
-      weekSeq.push(key);
-      let lam = 0;
-      let fin = 0;
-      for (const op of ops) {
-        const share = poolShare(op, opWeekHours(op, key));
-        lam += share.lam;
-        fin += share.fin;
-      }
-      capSeq.push({ lam, fin });
-      capTotal.push({ lam, fin });
-    }
-    const idxOfWeek = (key: string) => {
-      const i = weekSeq.indexOf(key);
-      return i === -1 ? (key < curKey ? 0 : weekSeq.length - 1) : i;
-    };
-
-    // Allocate: soonest order deadline first, then ticket number.
-    const sorted = allTickets
-      .filter((t) => !HIDDEN.includes(t.status))
-      .slice()
-      .sort((a, b) => {
-        const da = a.order?.deadline ?? a.deadline ?? '9999';
-        const db = b.order?.deadline ?? b.deadline ?? '9999';
-        if (da !== db) return da < db ? -1 : 1;
-        return (a.tn ?? Infinity) - (b.tn ?? Infinity);
-      });
-
-    const byWeek = new Map<string, { tickets: Ticket[]; late: Set<number>; lam: number; fin: number }>();
-    const bucket = (key: string) => {
-      let b = byWeek.get(key);
-      if (!b) {
-        b = { tickets: [], late: new Set(), lam: 0, fin: 0 };
-        byWeek.set(key, b);
-      }
-      return b;
-    };
-
-    for (const t of sorted) {
-      const idx = stageIndex(t.status);
-      const lamNeed = idx >= 0 && idx <= lamStageMax && LIVE.includes(t.status) ? (t.lamHrs ?? t.hrs ?? 0) : 0;
-      const finNeed = idx >= 0 && idx < rtdIdx && LIVE.includes(t.status) ? (t.finHrs ?? 0) : 0;
-      const startIdx = idxOfWeek(ticketWeekKey(t, curKey));
-
-      let placed = weekSeq.length - 1;
-      for (let i = startIdx; i < weekSeq.length; i++) {
-        const rem = capSeq[i]!;
-        const tot = capTotal[i]!;
-        // A bucket accepts the ticket if the remaining room covers it — or the
-        // ticket alone exceeds a full week (oversized), in which case it takes
-        // an untouched week rather than never landing.
-        const lamOk = lamNeed === 0 || rem.lam >= lamNeed || (lamNeed > tot.lam && rem.lam >= tot.lam && tot.lam > 0);
-        const finOk = finNeed === 0 || rem.fin >= finNeed || (finNeed > tot.fin && rem.fin >= tot.fin && tot.fin > 0);
-        if (lamOk && finOk) {
-          placed = i;
-          break;
-        }
-      }
-      const key = weekSeq[placed]!;
-      const rem = capSeq[placed]!;
-      rem.lam = Math.max(0, rem.lam - lamNeed);
-      rem.fin = Math.max(0, rem.fin - finNeed);
-      const b = bucket(key);
-      b.tickets.push(t);
-      b.lam += lamNeed;
-      b.fin += finNeed;
-      // Late = allocated week ends (Friday) after the deadline.
-      const dl = t.order?.deadline ?? t.deadline ?? null;
-      if (dl && (lamNeed > 0 || finNeed > 0)) {
-        const friday = new Date(key);
-        friday.setDate(friday.getDate() + 4);
-        if (isoDate(friday) > dl.slice(0, 10)) b.late.add(t.id);
-      }
-    }
-    return { byWeek, weekSeq };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTickets, ops, curKey, todayIdx]);
+  // Capacity-constrained spill-over allocation — the shared model (see
+  // allocateWeeks in @bowson/shared), so the Planner, the dashboard and
+  // /api/schedule all agree. A week fills to its TOTAL available hours
+  // before work spills to the next; per-skill split is shown for information.
+  const allocation = useMemo(
+    () =>
+      allocateWeeks(
+        allTickets.map((t) => ({ ...t, deadline: t.order?.deadline ?? t.deadline ?? null })),
+        ops,
+      ),
+    [allTickets, ops],
+  );
 
   // Weeks to show: the 16-week planner horizon + any weeks that got allocations.
   const weeks = useMemo(() => {
@@ -198,27 +68,12 @@ export function Schedule() {
     return [...labels.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, label]) => ({ key, label }));
   }, [allocation]);
 
-  // Per-week available hours per pool (day patterns + per-week overrides).
-  const capacityFor = useMemo(() => {
-    const map = new Map<string, { lam: number; fin: number; total: number }>();
-    for (const w of weeks) {
-      let lam = 0;
-      let fin = 0;
-      for (const op of ops) {
-        const share = poolShare(op, opWeekHours(op, w.key));
-        lam += share.lam;
-        fin += share.fin;
-      }
-      map.set(w.key, { lam: r1(lam), fin: r1(fin), total: r1(lam + fin) });
-    }
-    return (key: string) => map.get(key) ?? { lam: 0, fin: 0, total: 0 };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weeks, ops, curKey, todayIdx]);
+  const capacityFor = allocation.capacityFor;
 
   const committedFor = (key: string) => {
     const b = allocation.byWeek.get(key);
     if (!b) return { lam: 0, fin: 0, total: 0 };
-    return { lam: Math.round(b.lam), fin: Math.round(b.fin), total: Math.round(b.lam + b.fin) };
+    return { lam: Math.round(b.lam), fin: Math.round(b.fin), total: Math.round(b.total) };
   };
 
   const ticketsFor = (key: string) => allocation.byWeek.get(key)?.tickets ?? [];
@@ -338,16 +193,11 @@ export function Schedule() {
                     {weeks.map((w) => {
                       const cap = capacityFor(w.key);
                       const com = committedFor(w.key);
-                      const lamOver = com.lam > cap.lam && cap.lam > 0;
-                      const finOver = com.fin > cap.fin && cap.fin > 0;
+                      const over = com.total > cap.total && cap.total > 0;
                       return (
                         <td key={w.key} colSpan={5} className="border-l-2 border-border px-2 py-1 text-center text-[10px]">
-                          <div className={lamOver ? 'text-red' : cap.lam > 0 ? 'text-teal' : 'text-text3'}>
-                            Lam {com.lam > 0 ? `${com.lam}/` : ''}{cap.lam}h
-                          </div>
-                          <div className={finOver ? 'text-red' : cap.fin > 0 ? 'text-teal' : 'text-text3'}>
-                            Fin {com.fin > 0 ? `${com.fin}/` : ''}{cap.fin}h
-                          </div>
+                          <div className={over ? 'text-red' : cap.total > 0 ? 'text-teal' : 'text-text3'}>{cap.total}h avail</div>
+                          {com.total > 0 && <div className={over ? 'text-red' : 'text-text2'}>{com.total}h booked</div>}
                         </td>
                       );
                     })}
@@ -367,43 +217,37 @@ export function Schedule() {
             {weeks.map((w) => {
               const cap = capacityFor(w.key);
               const com = committedFor(w.key);
-              const lamOver = com.lam > cap.lam && cap.lam > 0;
-              const finOver = com.fin > cap.fin && cap.fin > 0;
-              const over = lamOver || finOver;
+              const over = com.total > cap.total && cap.total > 0;
+              const pct = cap.total > 0 ? Math.min(Math.round((com.total / cap.total) * 100), 100) : 0;
+              const warn = com.total > cap.total * 0.85 && !over;
+              const barCol = over ? 'var(--color-red)' : warn ? 'var(--color-amber)' : 'var(--color-teal)';
               const wk = ticketsFor(w.key);
               const late = lateFor(w.key);
-              const bucketBar = (label: string, c: number, k: number, isOver: boolean) => {
-                const pct = k > 0 ? Math.min(Math.round((c / k) * 100), 100) : 0;
-                const warn = c > k * 0.85 && !isOver;
-                const col = isOver ? 'var(--color-red)' : warn ? 'var(--color-amber)' : 'var(--color-teal)';
-                return (
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className="w-16 shrink-0 text-[10px] font-bold uppercase tracking-wide text-text3">{label}</span>
-                    <div className="h-[5px] flex-1 rounded-full bg-surface2">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: col }} />
-                    </div>
-                    <span className="w-24 shrink-0 text-right text-[11px] font-bold tabular-nums" style={{ color: col }}>
-                      {c}<span className="text-[10px] font-normal text-text3"> / {k}h</span>
-                      {isOver && <span className="ml-1 text-[9px] font-bold text-red">+{c - k}</span>}
-                    </span>
-                  </div>
-                );
-              };
               return (
                 <div key={w.key} className="mb-2.5 rounded-lg border bg-surface p-3" style={{ borderColor: over ? 'var(--color-red)' : 'var(--color-border)' }}>
                   <div className="mb-2 flex items-center justify-between">
                     <div>
                       <div className="text-[13px] font-bold">{w.label}{w.key === curKey && <span className="ml-1.5 text-[10px] font-normal text-teal">(this week — remaining days)</span>}</div>
                       <div className="mt-0.5 text-[10px] text-text3">
-                        {cap.total > 0 ? `${cap.total}h available · ${com.total}h committed` : 'No capacity set'}
+                        {cap.total > 0
+                          ? `${cap.total}h available · ${com.total}h committed · Laminating ${com.lam}h / Finishing ${com.fin}h (team: ${cap.lam}h lam · ${cap.fin}h fin)`
+                          : 'No capacity set'}
                       </div>
                     </div>
-                    {over && <div className="text-[10px] font-bold text-red">⚠ Over capacity</div>}
+                    <div className="text-right">
+                      {cap.total > 0 ? (
+                        <span className="text-[13px] font-bold" style={{ color: barCol }}>
+                          {com.total}<span className="text-[10px] font-normal text-text3"> / {cap.total}h</span>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-text3">—</span>
+                      )}
+                      {over && <div className="text-[10px] font-bold text-red">⚠ Over +{com.total - cap.total}h</div>}
+                    </div>
                   </div>
                   {cap.total > 0 && (
-                    <div className="mb-1">
-                      {bucketBar('Laminating', com.lam, cap.lam, lamOver)}
-                      {bucketBar('Finishing', com.fin, cap.fin, finOver)}
+                    <div className="mb-2.5 h-[5px] rounded-full bg-surface2">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barCol }} />
                     </div>
                   )}
                   {late.size > 0 && (

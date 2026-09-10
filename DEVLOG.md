@@ -1916,6 +1916,35 @@ all three tables.
 
 ---
 
+## 2026-09-10 — One scheduling model everywhere: dashboard capacity + spill-over fixed
+
+**Done**
+- Client feedback: (1) the dashboard "Production Capacity — Next 8 Weeks"
+  showed available hours but 0h committed / 0 tickets; (2) the Planner
+  spread work across weeks while the current week still had capacity.
+- **Root cause — three different models.** /api/schedule (which feeds the
+  dashboard grid) and the dashboard metrics only counted tickets with a
+  stored `wc` (none have one → 0h). The Planner allocated per skill *pool*:
+  Jacob is the only laminator and splits 50/50, so the Laminating pool was
+  ~9–19h while the week showed 61.5h total — all current work is laminating
+  (pre-split hours), so it "spilled" while Shaun's finishing hours sat idle.
+- **Fix — `allocateWeeks()` in @bowson/shared**, the single capacity-
+  constrained spill-over model, constrained by the week's TOTAL hours (the
+  client's words: "cannot commit more hours than are available in capacity"),
+  with the Laminating/Finishing split shown for information only. Used by
+  the Planner, /api/schedule and the dashboard, so every screen agrees.
+- `remainingSplit()`: pre-split COMP hours now fall back to Finishing
+  (assembly labour), not Laminating.
+- Planner cards: single total bar + "Laminating x / Finishing y (team: …)"
+  breakdown; week-total row back to "avail / booked"; LATE flags unchanged.
+- Verified live: current week fills to 98% before spilling, following weeks
+  ~98%, no week over capacity; dashboard 262.9h / 572h (was 0h).
+
+**Features added / modified**
+- Shared scheduling allocator; Planner, /api/schedule, dashboard capacity.
+
+---
+
 ## 2026-08-21 — Client re-test feedback: drag preview + Ready customer visibility
 
 **Done**

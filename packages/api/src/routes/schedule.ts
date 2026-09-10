@@ -2,62 +2,57 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   LIVE_STATUSES,
   PLANNER_WEEKS,
+  allocateWeeks,
   formatWc,
   nextWeeks,
   opWeekTotal,
   wcKey,
-  weekCapacityFor,
-  remainingHours,
-  type OperativeHoursLike,
+  type AllocOperativeLike,
 } from '@bowson/shared';
 import { db, unwrap } from '../supabase.js';
 
-/** Weekly capacity vs committed (remaining) labour hours. Capacity honours
- * each operative's day pattern + per-week overrides, and the current week is
- * prorated (days already passed contribute nothing). */
+/** Weekly capacity vs committed (remaining) labour hours, using the shared
+ * capacity-constrained allocation — the same model as the Planner, so the
+ * dashboard's 8-week grid shows the same weeks/hours the Planner does. */
 export const scheduleRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async () => {
     const operatives = unwrap(
-      await db.from('operatives').select('defaultHrs, dayPattern, dayHrs').is('deletedAt', null),
-    ) as OperativeHoursLike[];
+      await db.from('operatives').select('skills, defaultHrs, dayPattern, dayHrs').is('deletedAt', null),
+    ) as AllocOperativeLike[];
     // Standard (un-prorated, no-override) week for the summary metric.
     const weeklyCapacity = operatives.reduce((sum, op) => sum + opWeekTotal(op, ''), 0);
 
-    const tickets = unwrap(
-      await db.from('tickets').select('hrs, lamHrs, finHrs, status, wc')
-        .is('deletedAt', null).in('status', [...LIVE_STATUSES]).not('wc', 'is', null),
-    ) as { hrs: number; lamHrs: number | null; finHrs: number | null; status: string; wc: string | null }[];
+    const rows = unwrap(
+      await db.from('tickets').select('id, tn, type, status, hrs, lamHrs, finHrs, wc, order:orders(deadline)')
+        .is('deletedAt', null).in('status', [...LIVE_STATUSES]),
+    ) as unknown as {
+      id: number; tn: number | null; type: string; status: string; hrs: number;
+      lamHrs: number | null; finHrs: number | null; wc: string | null;
+      order: { deadline: string | null } | null;
+    }[];
+    const tickets = rows.map((t) => ({ ...t, deadline: t.order?.deadline ?? null }));
+    const alloc = allocateWeeks(tickets, operatives);
 
-    // committed (remaining) hours per week key
-    const committed = new Map<string, { hrs: number; count: number }>();
-    for (const t of tickets) {
-      const key = wcKey(t.wc);
-      if (!key) continue;
-      const cur = committed.get(key) ?? { hrs: 0, count: 0 };
-      cur.hrs += remainingHours(t);
-      cur.count += 1;
-      committed.set(key, cur);
-    }
-
-    // weeks to show: the 16-week planner horizon + any committed weeks
+    // weeks to show: the 16-week planner horizon + any allocated weeks
     const labels = new Map<string, string>();
     for (const wc of nextWeeks(PLANNER_WEEKS)) labels.set(wcKey(wc), wc);
-    for (const key of committed.keys()) {
+    for (const key of alloc.byWeek.keys()) {
       if (!labels.has(key)) labels.set(key, formatWc(new Date(key)));
     }
 
     const weeks = [...labels.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, wc]) => {
-        const c = committed.get(key) ?? { hrs: 0, count: 0 };
-        const committedHrs = Math.round(c.hrs * 10) / 10;
-        const capacityHrs = Math.round(weekCapacityFor(operatives, key) * 10) / 10;
+        const b = alloc.byWeek.get(key);
+        const committedHrs = Math.round((b?.total ?? 0) * 10) / 10;
+        const capacityHrs = alloc.capacityFor(key).total;
         return {
           key,
           wc,
           capacityHrs,
           committedHrs,
-          ticketCount: c.count,
+          ticketCount: b?.tickets.length ?? 0,
+          lateCount: b?.late.size ?? 0,
           utilisation: capacityHrs > 0 ? Math.round((committedHrs / capacityHrs) * 100) : 0,
         };
       });

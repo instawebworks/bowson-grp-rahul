@@ -3,6 +3,7 @@ import {
   HRS_PER_DAY,
   LIVE_STATUSES,
   STAGE_SKILLS,
+  allocateWeeks,
   formatWc,
   nextWeeks,
   orderProgress,
@@ -28,7 +29,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .is('deletedAt', null).is('tickets.deletedAt', null)
         .order('id', { ascending: false }).limit(8),
       db.from('tickets').select('id, tn, detail, type, status, hrs, lamHrs, finHrs, compParentId, wc, mouldId, orderId').is('deletedAt', null),
-      db.from('operatives').select('skills, defaultHrs').is('deletedAt', null),
+      db.from('operatives').select('skills, defaultHrs, dayPattern, dayHrs').is('deletedAt', null),
       db.from('moulds').select('id, ref, status, notes').is('deletedAt', null),
     ]);
 
@@ -38,9 +39,12 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     }[];
     const tickets = unwrap(ticketsR) as {
       id: number; tn: number | null; detail: string; type: string; status: string;
-      hrs: number; compParentId: number | null; wc: string | null; mouldId: number | null; orderId: number;
+      hrs: number; lamHrs: number | null; finHrs: number | null;
+      compParentId: number | null; wc: string | null; mouldId: number | null; orderId: number;
     }[];
-    const operatives = unwrap(opsR) as { skills: string[]; defaultHrs: number | null }[];
+    const operatives = unwrap(opsR) as {
+      skills: string[]; defaultHrs: number | null; dayPattern: number[] | null; dayHrs: Record<string, number> | null;
+    }[];
     const moulds = unwrap(mouldsR) as { id: number; ref: string; status: string; notes: string | null }[];
     const orderById = new Map(orders.map((o) => [o.id, o]));
 
@@ -83,16 +87,20 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     const mouldsInUse = new Set(inUseRows.map((r) => r.mouldId)).size;
     const mouldUtil = totalMoulds ? Math.round((mouldsInUse / totalMoulds) * 100) : 0;
 
-    // ── Capacity (8 weeks) ──
+    // ── Capacity (8 weeks) — the shared capacity-constrained allocation, so
+    // these numbers match the Planner and the 8-week grid exactly. ──
     const weeklyCapacity = operatives.reduce((s, op) => s + WORKING_DAYS * (op.defaultHrs ?? HRS_PER_DAY), 0);
-    const weekKeys = new Set(nextWeeks(8).map((w) => wcKey(w)));
+    const alloc = allocateWeeks(
+      tickets.filter((t) => t.type !== 'RAW').map((t) => ({ ...t, deadline: orderById.get(t.orderId)?.deadline ?? null })),
+      operatives,
+    );
+    const weekKeys = nextWeeks(8).map((w) => wcKey(w));
     let committed8 = 0;
-    for (const t of tickets) {
-      if (t.type === 'RAW' || !live.includes(t.status) || !t.wc) continue;
-      if (!weekKeys.has(wcKey(t.wc))) continue;
-      committed8 += remainingHours(t);
+    let totalCapacity8 = 0;
+    for (const key of weekKeys) {
+      committed8 += alloc.byWeek.get(key)?.total ?? 0;
+      totalCapacity8 += alloc.capacityFor(key).total;
     }
-    const totalCapacity8 = weeklyCapacity * 8;
     const utilisation8 = totalCapacity8 ? Math.round((committed8 / totalCapacity8) * 100) : 0;
     const leadTimeWeeks = weeklyCapacity > 0 ? Math.round((manHours / weeklyCapacity) * 10) / 10 : null;
 

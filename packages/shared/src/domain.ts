@@ -43,16 +43,36 @@ export function pctForStatus(status: string, fallback = 0): number {
  * Laminating.
  */
 export function remainingHours(t: {
+  type?: string;
   status: string;
   hrs?: number | null;
   lamHrs?: number | null;
   finHrs?: number | null;
 }): number {
+  const s = remainingSplit(t);
+  return s.lam + s.fin;
+}
+
+/**
+ * Remaining hours per bucket. Pre-split tickets (lamHrs null) fall back to
+ * the whole `hrs` — as Laminating for MADE/PART (at-the-mould work), but as
+ * Finishing for a COMP, whose hours are assembly labour.
+ */
+export function remainingSplit(t: {
+  type?: string;
+  status: string;
+  hrs?: number | null;
+  lamHrs?: number | null;
+  finHrs?: number | null;
+}): { lam: number; fin: number } {
   const idx = stageIndex(t.status);
-  if (idx < 0) return 0;
-  const lam = idx <= stageIndex(LAM_STAGE) ? (t.lamHrs ?? t.hrs ?? 0) : 0;
-  const fin = idx < stageIndex(RTD_STAGE) ? (t.finHrs ?? 0) : 0;
-  return lam + fin;
+  if (idx < 0) return { lam: 0, fin: 0 };
+  const preSplit = t.lamHrs == null && t.finHrs == null;
+  const baseLam = preSplit ? (t.type === 'COMP' ? 0 : t.hrs ?? 0) : t.lamHrs ?? 0;
+  const baseFin = preSplit ? (t.type === 'COMP' ? t.hrs ?? 0 : 0) : t.finHrs ?? 0;
+  const lam = idx <= stageIndex(LAM_STAGE) ? baseLam : 0;
+  const fin = idx < stageIndex(RTD_STAGE) ? baseFin : 0;
+  return { lam, fin };
 }
 
 /** PART tickets belonging to a COMP. */
