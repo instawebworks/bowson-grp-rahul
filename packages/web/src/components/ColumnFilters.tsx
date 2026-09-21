@@ -4,8 +4,14 @@ import { useState } from 'react';
  * Per-column filter inputs in table headers — ported from the prototype's
  * simple always-visible column-filter engine (cfInput / cfMatch).
  */
-export function useColumnFilters() {
-  const [filters, setFilters] = useState<Record<string, string>>({});
+export function useColumnFilters(initial: Record<string, string> = {}) {
+  // `initial` lets a page arrive pre-filtered (e.g. a dashboard tile linking
+  // to In Production at one stage — client snags #10/#11).
+  const [filters, setFilters] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(initial)) if (v) out[k] = v.toLowerCase();
+    return out;
+  });
 
   const set = (col: string, val: string) =>
     setFilters((prev) => {

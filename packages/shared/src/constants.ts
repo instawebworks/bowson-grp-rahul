@@ -25,7 +25,7 @@ export type GrpStage = (typeof GRP_STAGES)[number];
 
 /** Short labels aligned by index with GRP_STAGES. */
 export const STAGE_SHORT = [
-  'Spec', 'Materials', 'Queue', 'Gel & Lam', 'Trim',
+  'Spec', 'Materials Required', 'Queue', 'Gel & Lam', 'Trim',
   'Assembly', 'QC', 'Packing', 'Ready', 'Despatched',
 ] as const;
 

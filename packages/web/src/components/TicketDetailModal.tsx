@@ -79,8 +79,14 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
     return <EditTicketModal ticket={t} parts={t.parts ?? []} onClose={() => setEditing(false)} />;
   }
 
-  if (showSpec && specTemplate) {
-    return <SpecModal template={specTemplate} onClose={() => setShowSpec(false)} />;
+  if (showSpec && specTemplate && t) {
+    return (
+      <SpecModal
+        template={specTemplate}
+        ticket={{ type: t.type, detail: t.detail, drawing: t.drawing, hrs: t.hrs }}
+        onClose={() => setShowSpec(false)}
+      />
+    );
   }
 
   if (lightbox) {

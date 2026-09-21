@@ -529,8 +529,11 @@ export function OrderDetail() {
                   canManage
                     ? (tid, checked) =>
                         setBulkSel((prev) => {
+                          // Ticking the finished product ticks all of its parts
+                          // (client snag #20) — one click per slide, not per part.
                           const next = new Set(prev);
-                          if (checked) next.add(tid); else next.delete(tid);
+                          const ids = [tid, ...partsOf(tid).map((p) => p.id)];
+                          for (const id of ids) { if (checked) next.add(id); else next.delete(id); }
                           return next;
                         })
                     : undefined

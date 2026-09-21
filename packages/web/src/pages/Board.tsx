@@ -27,6 +27,7 @@ import { ManagerPinGate } from '../components/ManagerPinGate';
 import { Spinner } from '../components/ui';
 import { daysToDeadline, fmtElapsed, initials } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
+import { STAGE_COLOR } from '../lib/stageColors';
 
 type View = 'stage' | 'ops';
 
@@ -47,17 +48,17 @@ const KB_PALETTES = [
 
 const CURE_STAGES = ['4. Gel Coat & Laminate'];
 
-// Stage columns with the prototype's KB_COLS colours. Spec/Materials are flagged.
+// Stage columns coloured from the shared stage palette (client snag #16). Spec/Materials are flagged.
 const KB_COLS: { key: string; label: string; color: string; warn?: boolean }[] = [
-  { key: '1. Spec Required', label: 'Spec Required', color: '#534AB7', warn: true },
-  { key: '2. Materials Required', label: 'Materials', color: '#a86e0a', warn: true },
-  { key: '3. Queue - Awaiting Mould', label: 'Queue - Awaiting Mould', color: '#8a5200' },
-  { key: '4. Gel Coat & Laminate', label: 'Gel Coat & Laminate', color: '#7a4800' },
-  { key: '5. Trim & Finish', label: 'Trim & Finish', color: '#7a3000' },
-  { key: '6. Assembly', label: 'Assembly', color: '#0c6b50' },
-  { key: '7. QC Check', label: 'QC Check', color: '#1558a0' },
-  { key: '8. Packing', label: 'Packing', color: '#2e6810' },
-  { key: '9. Ready to Despatch', label: 'Ready to Despatch', color: '#0f4f8a' },
+  { key: '1. Spec Required', label: 'Spec Required', color: STAGE_COLOR['1. Spec Required'] ?? '#534AB7', warn: true },
+  { key: '2. Materials Required', label: 'Materials Required', color: STAGE_COLOR['2. Materials Required'] ?? '#a86e0a', warn: true },
+  { key: '3. Queue - Awaiting Mould', label: 'Queue - Awaiting Mould', color: STAGE_COLOR['3. Queue - Awaiting Mould'] ?? '#8a5200' },
+  { key: '4. Gel Coat & Laminate', label: 'Gel Coat & Laminate', color: STAGE_COLOR['4. Gel Coat & Laminate'] ?? '#7a4800' },
+  { key: '5. Trim & Finish', label: 'Trim & Finish', color: STAGE_COLOR['5. Trim & Finish'] ?? '#7a3000' },
+  { key: '6. Assembly', label: 'Assembly', color: STAGE_COLOR['6. Assembly'] ?? '#0c6b50' },
+  { key: '7. QC Check', label: 'QC Check', color: STAGE_COLOR['7. QC Check'] ?? '#1558a0' },
+  { key: '8. Packing', label: 'Packing', color: STAGE_COLOR['8. Packing'] ?? '#2e6810' },
+  { key: '9. Ready to Despatch', label: 'Ready to Despatch', color: STAGE_COLOR['9. Ready to Despatch'] ?? '#0f4f8a' },
 ];
 
 const TYPE_BORDER: Record<string, string> = {

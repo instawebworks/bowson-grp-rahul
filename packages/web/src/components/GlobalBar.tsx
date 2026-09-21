@@ -4,16 +4,18 @@ import { useAuth } from '../lib/auth';
 import { Button } from './ui';
 import { OrderForm } from './OrderForm';
 import { ImportWizard } from './ImportWizard';
-import { ManagerPinGate } from './ManagerPinGate';
-import { NewTicketForm } from './NewTicketForm';
 import { GlobalSearch } from './GlobalSearch';
 
-type Popup = null | 'order' | 'ticket-pin' | 'ticket' | 'import';
+type Popup = null | 'order' | 'import';
 
 /**
  * Global controls shown on the right of every page header: search + the
- * Import / Ticket / Order actions + a saved indicator. Rendered by PageHeader
- * so the whole app has a single header row (matches the prototype's top bar).
+ * Import / Order actions + a saved indicator. Rendered by PageHeader so the
+ * whole app has a single header row (matches the prototype's top bar).
+ *
+ * The standalone "+ Ticket" entry point was removed at the client's request
+ * (snag #28): tickets are only added through Import CSV or an order
+ * (+ Order, then "+ Add ticket" on the order page).
  */
 export function GlobalBar({ actions = true, leading }: { actions?: boolean; leading?: ReactNode }) {
   const { canManage, user, signOut } = useAuth();
@@ -28,7 +30,6 @@ export function GlobalBar({ actions = true, leading }: { actions?: boolean; lead
       {actions && canManage && (
         <>
           <Button onClick={() => setPopup('import')}>⭱ Import CSV</Button>
-          <Button onClick={() => setPopup('ticket-pin')}>+ Ticket</Button>
           <Button variant="primary" onClick={() => setPopup('order')}>+ Order</Button>
         </>
       )}
@@ -40,14 +41,6 @@ export function GlobalBar({ actions = true, leading }: { actions?: boolean; lead
       )}
 
       {popup === 'order' && <OrderForm onClose={() => setPopup(null)} />}
-      {popup === 'ticket-pin' && (
-        <ManagerPinGate
-          action="add a standalone ticket"
-          onSuccess={() => setPopup('ticket')}
-          onCancel={() => setPopup(null)}
-        />
-      )}
-      {popup === 'ticket' && <NewTicketForm onClose={() => setPopup(null)} />}
       {popup === 'import' && <ImportWizard onClose={() => setPopup(null)} />}
     </div>
   );

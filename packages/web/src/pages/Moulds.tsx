@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { isoDate, mondayOf, wcKey } from '@bowson/shared';
 import { useAssignMould, useCatalogue, useMoulds, useTickets, useUpdateMould } from '../lib/hooks';
@@ -10,8 +11,11 @@ import { useAuth } from '../lib/auth';
 import { downloadCsv, parseCsv } from '../lib/csv';
 import { cureState, fmtCureMins } from '../lib/format';
 import type { Catalogue, Mould, Ticket } from '../lib/types';
+import { STAGE_COLOR } from '../lib/stageColors';
 
 type Tab = 'register' | 'board' | 'unassigned' | 'schedule' | 'unlinked';
+/** Status-card filter (client snag #26): the boxes at the top narrow the board. */
+type StatFilter = 'all' | 'inuse' | 'available';
 const ACTIVE_STAGES = ['4. Gel Coat & Laminate'];
 const QUEUE = '3. Queue - Awaiting Mould';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -24,11 +28,22 @@ function occupancy(m: Mould, tickets: Ticket[]) {
   return { active, queued, status };
 }
 
+/** "In Use" = occupied OR has a queue waiting (a mould with demand isn't
+ * available, even if its chambers are momentarily empty). */
+function inUseGroup(m: Mould, occ: ReturnType<typeof occupancy>): StatFilter | 'maintenance' {
+  if (m.status === 'Maintenance') return 'maintenance';
+  return occ.active.length > 0 || occ.queued.length > 0 ? 'inuse' : 'available';
+}
+
 export function Moulds() {
   const { data: moulds, isLoading, error } = useMoulds();
   const { data: tickets } = useTickets();
   const { data: catalogue } = useCatalogue();
+  const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>('board');
+  const [statFilter, setStatFilter] = useState<StatFilter>(() =>
+    params.get('filter') === 'inuse' || params.get('filter') === 'available' ? (params.get('filter') as StatFilter) : 'all',
+  );
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Mould | null>(null);
   const { canManage } = useAuth();
@@ -38,15 +53,22 @@ export function Moulds() {
   const cat = catalogue ?? [];
   const unlinkedCount = cat.reduce((n, c) => n + c.parts.filter((p) => !p.mouldId).length, 0);
 
-  // Status-bar metrics. "In Use" = occupied OR has a queue waiting — a mould
-  // with demand isn't available, even if its chambers are momentarily empty.
+  // Status-bar metrics.
   const occs = rows.map((m) => occupancy(m, liveTickets));
   const maint = rows.filter((m) => m.status === 'Maintenance').length;
-  const inUse = occs.filter((o, i) => rows[i]!.status !== 'Maintenance' && (o.active.length > 0 || o.queued.length > 0)).length;
+  const inUse = occs.filter((o, i) => inUseGroup(rows[i]!, o) === 'inuse').length;
   const available = rows.length - inUse - maint;
   const unassignedCount = liveTickets.filter(
     (t) => t.status === QUEUE && !t.mouldId && t.type !== 'RAW' && t.type !== 'COMP',
   ).length;
+
+  // The status boxes act as filters on the board and register (client snag
+  // #26); clicking the active box again clears it.
+  const filtered = statFilter === 'all' ? rows : rows.filter((m, i) => inUseGroup(m, occs[i]!) === statFilter);
+  const pickFilter = (f: StatFilter) => {
+    setStatFilter((cur) => (cur === f ? 'all' : f));
+    if (tab !== 'board' && tab !== 'register') setTab('board');
+  };
 
   const tabBtn = (t: Tab, label: string) => (
     <button
@@ -69,18 +91,27 @@ export function Moulds() {
         globalActions={false}
       />
       <Content>
-        {/* Status bar */}
+        {/* Status bar — each box filters the board / register to those moulds */}
         <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-          <MouldStat label="Total Moulds" value={rows.length} />
-          <MouldStat label="In Use" value={inUse} color={inUse > 0 ? '#922020' : undefined} />
-          <MouldStat label="Available" value={available} color={available > 0 ? '#0c6b50' : undefined} />
+          <MouldStat label="Total Moulds" value={rows.length} active={statFilter === 'all'} onClick={() => pickFilter('all')} />
+          <MouldStat label="In Use" value={inUse} color={inUse > 0 ? '#922020' : undefined} active={statFilter === 'inuse'} onClick={() => pickFilter('inuse')} />
+          <MouldStat label="Available" value={available} color={available > 0 ? '#0c6b50' : undefined} active={statFilter === 'available'} onClick={() => pickFilter('available')} />
           <MouldStat
             label="No Mould Assigned"
             value={unassignedCount}
             color={unassignedCount > 0 ? '#a86e0a' : undefined}
+            active={tab === 'unassigned'}
             onClick={() => setTab('unassigned')}
           />
         </div>
+        {statFilter !== 'all' && (tab === 'board' || tab === 'register') && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-teal bg-teal-l px-3.5 py-2 text-xs">
+            <span className="font-semibold text-teal">
+              Showing {filtered.length} {statFilter === 'inuse' ? 'in-use' : 'available'} mould{filtered.length === 1 ? '' : 's'}
+            </span>
+            <Button className="ml-auto" onClick={() => setStatFilter('all')}>✕ Show all moulds</Button>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="mb-4 flex flex-wrap items-center gap-1 border-b border-border">
@@ -95,9 +126,9 @@ export function Moulds() {
         </div>
 
         {tab === 'register' && (
-          <RegisterTab rows={rows} tickets={liveTickets} isLoading={isLoading} error={error} onEdit={setEditing} />
+          <RegisterTab rows={filtered} tickets={liveTickets} isLoading={isLoading} error={error} onEdit={setEditing} />
         )}
-        {tab === 'board' && <BoardTab moulds={rows} tickets={liveTickets} />}
+        {tab === 'board' && <BoardTab moulds={filtered} tickets={liveTickets} />}
         {tab === 'schedule' && <ScheduleTab moulds={rows} tickets={liveTickets} />}
         {tab === 'unassigned' && <UnassignedTab moulds={rows} tickets={liveTickets} />}
         {tab === 'unlinked' && <UnlinkedTab catalogue={cat} moulds={moulds ?? []} />}
@@ -106,11 +137,15 @@ export function Moulds() {
   );
 }
 
-function MouldStat({ label, value, color, onClick }: { label: string; value: number; color?: string; onClick?: () => void }) {
+function MouldStat({
+  label, value, color, onClick, active,
+}: { label: string; value: number; color?: string; onClick?: () => void; active?: boolean }) {
   return (
     <div
       onClick={onClick}
-      className={`rounded-lg border bg-surface px-4 py-3 ${onClick ? 'cursor-pointer' : ''}`}
+      role={onClick ? 'button' : undefined}
+      title={onClick ? `Filter to ${label.toLowerCase()}` : undefined}
+      className={`rounded-lg border bg-surface px-4 py-3 transition ${onClick ? 'cursor-pointer hover:bg-teal-l/30' : ''} ${active ? 'ring-2 ring-teal' : ''}`}
       style={{ borderColor: color ?? 'var(--color-border)' }}
     >
       <div className="text-2xl font-extrabold leading-none" style={{ color: color ?? 'var(--color-text3)' }}>{value}</div>
@@ -420,9 +455,6 @@ function TicketLine({
 }
 
 // ─── Schedule (3-week mould-usage calendar) ──────────────────────────────────
-const STAGE_COLOR: Record<string, string> = {
-  '4. Gel Coat & Laminate': '#f97316',
-};
 const DONE_STAGES = ['Despatched', '9. Ready to Despatch', 'Completed', 'Order Cancelled', 'Cancelled'];
 
 function ScheduleTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }) {

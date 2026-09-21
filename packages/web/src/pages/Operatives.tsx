@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useFinishTypes, useOperatives, useSettings, useTickets, useUpdateFinishType, useUpdateSettings } from '../lib/hooks';
 import { Button, Content, PageHeader } from '../components/ui';
 import { OperativeForm } from '../components/OperativeForm';
@@ -18,7 +19,12 @@ function dayColor(h: number) {
 export function Operatives() {
   const { data, isLoading, error } = useOperatives();
   const { data: tickets } = useTickets();
-  const rows = data ?? [];
+  const navigate = useNavigate();
+  // The dashboard's Stage Capacity tiles link here as ?skill=<stage> to show
+  // who is trained for that stage (client snag #13).
+  const [params] = useSearchParams();
+  const skill = params.get('skill');
+  const rows = (data ?? []).filter((o) => !skill || o.skills.includes(skill));
   const allTickets = tickets ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Operative | null>(null);
@@ -37,6 +43,14 @@ export function Operatives() {
         globalActions={false}
       />
       <Content>
+        {skill && (
+          <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-teal bg-teal-l px-3.5 py-2 text-xs">
+            <span className="font-semibold text-teal">
+              {rows.length} operative{rows.length === 1 ? '' : 's'} trained for {skill.replace(/^\d+\.\s*/, '')}
+            </span>
+            <Button className="ml-auto" onClick={() => navigate('/operatives')}>✕ Show everyone</Button>
+          </div>
+        )}
         <div className="mb-3 flex items-center justify-between">
           <span className="text-xs text-text3">Click an operative to edit their schedule, skills and pay</span>
           {canManage && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Add operative</Button>}
@@ -45,7 +59,9 @@ export function Operatives() {
         {isLoading && <div className="text-xs text-text3">Loading…</div>}
         {error && <div className="text-xs text-text3">Could not load — {(error as Error).message}</div>}
         {!isLoading && !error && rows.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border2 bg-surface p-8 text-center text-xs text-text3">No operatives added yet.</div>
+          <div className="rounded-lg border border-dashed border-border2 bg-surface p-8 text-center text-xs text-text3">
+            {skill ? 'Nobody is trained for this stage yet — add the skill on an operative.' : 'No operatives added yet.'}
+          </div>
         )}
 
         <div className="space-y-2">

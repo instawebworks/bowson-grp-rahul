@@ -259,7 +259,7 @@ export function ShopFloor() {
       >
         {tabBtn('mine', 'My Tickets', mine.length)}
         {tabBtn('avail', 'Available', available.length)}
-        {tabBtn('board', 'Board')}
+        {tabBtn('board', 'T-Card Board')}
       </nav>
 
       {flash && (

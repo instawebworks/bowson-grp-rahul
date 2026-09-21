@@ -95,6 +95,9 @@ export const ticketInputSchema = z.object({
   status: ticketStatusSchema.optional(),
   wc: z.string().nullish(),
   hrs: z.number().nonnegative().default(0),
+  /** Labour split (phase 2) — editable per ticket from the board (client snag #18). */
+  lamHrs: z.number().nonnegative().nullish(),
+  finHrs: z.number().nonnegative().nullish(),
   qty: z.number().int().positive().default(1),
   unitPrice: z.number().nonnegative().default(0),
   mouldId: z.number().int().nullish(),

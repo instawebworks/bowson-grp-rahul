@@ -46,11 +46,16 @@ export function Metric({
   value,
   sub,
   tone = 'default',
+  onClick,
+  title,
 }: {
   label: string;
   value: ReactNode;
   sub?: string;
   tone?: 'default' | 'red' | 'green' | 'amber' | 'blue';
+  /** When set, the tile is a link to the list behind the number (client snag #10). */
+  onClick?: () => void;
+  title?: string;
 }) {
   const toneColor: Record<string, string> = {
     default: 'inherit',
@@ -60,8 +65,18 @@ export function Metric({
     blue: '#1558a0',
   };
   return (
-    <div className="rounded-lg border border-border bg-surface px-3.5 py-3">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text3">{label}</div>
+    <div
+      onClick={onClick}
+      title={title}
+      role={onClick ? 'button' : undefined}
+      className={`rounded-lg border border-border bg-surface px-3.5 py-3 ${
+        onClick ? 'cursor-pointer transition hover:border-teal hover:bg-teal-l/30' : ''
+      }`}
+    >
+      <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-text3">
+        <span>{label}</span>
+        {onClick && <span className="text-[10px] text-teal">→</span>}
+      </div>
       <div className="text-[22px] font-bold leading-none tracking-tight" style={{ color: toneColor[tone] }}>
         {value}
       </div>
@@ -180,7 +195,7 @@ export function Modal({
       onMouseDown={onClose}
     >
       <div
-        className={`flex max-h-[90vh] w-full ${width} flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl`}
+        className={`flex max-h-[90vh] w-full ${width} flex-col overflow-hidden rounded-xl border border-border bg-surface text-text shadow-xl`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex flex-none items-start justify-between border-b border-border bg-surface2 px-4 py-3">
@@ -224,7 +239,7 @@ export function ConfirmDialog({
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+        className="w-full max-w-sm overflow-hidden rounded-xl border border-border bg-surface text-text shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border bg-surface2 px-4 py-3">

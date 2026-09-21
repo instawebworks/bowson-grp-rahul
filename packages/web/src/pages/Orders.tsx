@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ORDER_STATS } from '@bowson/shared';
 import { useOrders, useReleaseOrder, useSetOrderStatus } from '../lib/hooks';
 import { useAuth } from '../lib/auth';
 import { Button, Card, ConfirmDialog, Content, PageHeader, Saving, StatusPill, Table } from '../components/ui';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
+import { EditOrderForm } from '../components/EditOrderForm';
 import { ItemBadges, itemCounts } from '../components/ItemBadges';
 import { daysToDeadline, money } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
@@ -73,15 +74,21 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
     setStatus.mutate({ id: o.id, status: value });
   }
 
+  // Dashboard tiles link here pre-filtered: ?status=Pending, or ?view=active
+  // (everything in production — not pending, not finished; client snag #10).
+  const [params] = useSearchParams();
+  const activeOnly = params.get('view') === 'active';
   const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(params.get('status') ?? '');
   const [showCompleted, setShowCompleted] = useState(false);
   const [page, setPage] = useState(1);
+  const [editOrder, setEditOrder] = useState<Order | null>(null);
   const cf = useColumnFilters();
 
   const rows = useMemo(() => {
     let list = (data ?? []).filter((o) => !statuses || statuses.includes(o.status));
     if (!statuses && !showCompleted) list = list.filter((o) => !['Despatched', 'Completed'].includes(o.status));
+    if (activeOnly) list = list.filter((o) => !['Pending', 'Despatched', 'Completed', 'Cancelled'].includes(o.status) && !o.isDraft);
     if (statusFilter) list = list.filter((o) => o.status === statusFilter);
     if (q.trim()) {
       const term = q.toLowerCase();
@@ -98,7 +105,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
     );
     return list.sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cf.match is derived from cf.filters
-  }, [data, statuses, showCompleted, statusFilter, q, cf.filters]);
+  }, [data, statuses, showCompleted, activeOnly, statusFilter, q, cf.filters]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
   const current = Math.min(page, pageCount);
@@ -124,6 +131,7 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
 
   return (
     <>
+      {editOrder && <EditOrderForm order={editOrder} onClose={() => setEditOrder(null)} />}
       {confirmRelease && (
         <ConfirmDialog
           title={`Release order ${confirmRelease.orderNumber} to production?`}
@@ -154,6 +162,12 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
         sub={sub ?? `${rows.length} order${rows.length === 1 ? '' : 's'}`}
       />
       <Content>
+        {activeOnly && (
+          <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-teal bg-teal-l px-3.5 py-2 text-xs">
+            <span className="font-semibold text-teal">Showing active orders only (in production)</span>
+            <Button className="ml-auto" onClick={() => navigate('/orders')}>✕ Show all</Button>
+          </div>
+        )}
         {/* Toolbar */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search…" className={`${ctrl} w-64`} />
@@ -244,7 +258,13 @@ export function Orders({ title = 'All Orders', sub, statuses }: Props) {
                   </td>
                   <td className="px-3 py-2 text-[11px] font-semibold tabular-nums">{money(o.value)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <Button onClick={(e) => { e.stopPropagation(); navigate(`/orders/${o.id}`); }}>View</Button>
+                    <span className="inline-flex gap-1">
+                      <Button onClick={(e) => { e.stopPropagation(); navigate(`/orders/${o.id}`); }}>View</Button>
+                      {/* Edit straight from the list (client snag #28: "a facility to edit an order"). */}
+                      {canManage && (
+                        <Button title="Edit order details" onClick={(e) => { e.stopPropagation(); setEditOrder(o); }}>✎ Edit</Button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               );

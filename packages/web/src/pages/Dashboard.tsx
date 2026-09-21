@@ -10,6 +10,7 @@ import {
   Table,
 } from "../components/ui";
 import { fmtDate } from "../lib/format";
+import { stageColor } from "../lib/stageColors";
 import { ItemBadges } from "../components/ItemBadges";
 
 const stageShort = (s: string) => {
@@ -28,49 +29,56 @@ export function Dashboard() {
     <>
       <PageHeader title="Dashboard" />
       <Content>
-        {/* ── Metrics row ── */}
+        {/* ── Metrics row — each tile links to the list behind its number
+            (client snag #10; Moulds in Use already did). ── */}
         <div className="mb-4 grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
           <Metric
             label="Active Orders"
             value={f(data?.orders.active)}
             sub={`${data?.orders.overdue ?? 0} overdue`}
             tone={data && data.orders.overdue > 0 ? "red" : "default"}
+            title="Open All Orders (active)"
+            onClick={() => navigate("/orders?view=active")}
           />
           <Metric
             label="Orders Pending"
             value={f(data?.orders.pending)}
             sub="awaiting release"
             tone={data && data.orders.pending > 0 ? "amber" : "default"}
+            title="Open All Orders (pending)"
+            onClick={() => navigate("/orders?status=Pending")}
           />
           <Metric
             label="Slides in Production"
             value={f(data?.tickets.slidesInProduction)}
             sub="MADE & assembly tickets live"
             tone="green"
+            title="Open In Production (slides)"
+            onClick={() => navigate("/in-production?kind=slides")}
           />
           <Metric
             label="Parts in Production"
             value={f(data?.tickets.partsInProduction)}
             sub="PART tickets live"
             tone="blue"
+            title="Open In Production (parts)"
+            onClick={() => navigate("/in-production?type=PART")}
           />
-          <div
-            className="cursor-pointer"
+          <Metric
+            label="Moulds in Use"
+            value={data ? `${data.moulds.inUse}/${data.moulds.total}` : "…"}
+            sub={`${data?.moulds.utilisation ?? 0}% utilisation`}
+            tone={data && data.moulds.utilisation >= 80 ? "amber" : "default"}
             title="Open Mould Planner"
-            onClick={() => navigate("/moulds")}
-          >
-            <Metric
-              label="Moulds in Use"
-              value={data ? `${data.moulds.inUse}/${data.moulds.total}` : "…"}
-              sub={`${data?.moulds.utilisation ?? 0}% utilisation`}
-              tone={data && data.moulds.utilisation >= 80 ? "amber" : "default"}
-            />
-          </div>
+            onClick={() => navigate("/moulds?filter=inuse")}
+          />
           <Metric
             label="Total Man Hours"
             value={data ? data.tickets.manHours.toFixed(2) : "…"}
             sub="hrs remaining"
             tone="amber"
+            title="Open the Production Planner"
+            onClick={() => navigate("/schedule")}
           />
         </div>
 
@@ -182,17 +190,29 @@ export function Dashboard() {
                   No tickets in production
                 </div>
               ) : (
-                <div className="space-y-1.5">
+                <div className="space-y-0.5">
+                  {/* Each stage links to In Production filtered to that stage
+                      (client snag #11: "quickly identify what work is outstanding"). */}
                   {(data?.hoursByStage ?? []).map((h) => (
-                    <div
+                    <button
                       key={h.stage}
-                      className="flex items-center justify-between text-xs"
+                      onClick={() =>
+                        navigate(`/in-production?stage=${encodeURIComponent(h.stage)}`)
+                      }
+                      title={`Show tickets at ${h.stage}`}
+                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-left text-xs hover:bg-teal-l/40"
                     >
-                      <span className="text-text2">{stageShort(h.stage)}</span>
-                      <span className="font-semibold tabular-nums">
-                        {h.hrs}h
+                      <span className="flex items-center gap-2 text-text2">
+                        <span
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ background: stageColor(h.stage) }}
+                        />
+                        {stageShort(h.stage)}
                       </span>
-                    </div>
+                      <span className="font-semibold tabular-nums">
+                        {h.hrs}h <span className="font-normal text-teal">→</span>
+                      </span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -250,7 +270,8 @@ export function Dashboard() {
           </Card>
         </div>
 
-        {/* ── 8-week capacity grid ── */}
+        {/* ── 8-week capacity grid — each week links to that week's plan on
+            the Production Planner (client snag #12) ── */}
         <div className="mb-2 text-[11px] font-bold">
           Production Capacity — Next 8 Weeks
         </div>
@@ -260,7 +281,10 @@ export function Dashboard() {
             return (
               <div
                 key={w.key}
-                className={`rounded-lg border bg-surface p-2.5 ${over ? "border-red" : i === 0 ? "border-teal" : "border-border"}`}
+                role="button"
+                title={`Open the planner at ${w.wc}`}
+                onClick={() => navigate(`/schedule?week=${w.key}`)}
+                className={`cursor-pointer rounded-lg border bg-surface p-2.5 transition hover:bg-teal-l/30 ${over ? "border-red" : i === 0 ? "border-teal" : "border-border"}`}
               >
                 <div
                   className="mb-1 text-[10px] font-bold"
@@ -299,16 +323,19 @@ export function Dashboard() {
           })}
         </div>
 
-        {/* ── Stage capacity (this/next week) ── */}
+        {/* ── Stage capacity (this/next week) — each tile links to the
+            operatives trained for that stage (client snag #13) ── */}
         <div className="mb-2 text-[11px] font-bold">Stage Capacity</div>
         <div className="grid gap-3.5 md:grid-cols-2">
           <StageCapBlock
             label={`This week — ${data?.thisWeek ?? ""}`}
             rows={data?.stageCapacity.thisWeek ?? []}
+            onSelect={(stage) => navigate(`/operatives?skill=${encodeURIComponent(stage)}`)}
           />
           <StageCapBlock
             label={`Next week — ${data?.nextWeek ?? ""}`}
             rows={data?.stageCapacity.nextWeek ?? []}
+            onSelect={(stage) => navigate(`/operatives?skill=${encodeURIComponent(stage)}`)}
           />
         </div>
       </Content>
@@ -325,9 +352,11 @@ function capColor(util: number): string {
 function StageCapBlock({
   label,
   rows,
+  onSelect,
 }: {
   label: string;
   rows: { stage: string; trained: number; available: number }[];
+  onSelect?: (stage: string) => void;
 }) {
   return (
     <div>
@@ -355,7 +384,12 @@ function StageCapBlock({
           return (
             <div
               key={r.stage}
-              className="rounded-lg border border-border bg-surface p-2"
+              role={onSelect ? "button" : undefined}
+              title={onSelect ? `Show operatives trained for ${r.stage}` : undefined}
+              onClick={onSelect ? () => onSelect(r.stage) : undefined}
+              className={`rounded-lg border border-border bg-surface p-2 ${
+                onSelect ? "cursor-pointer transition hover:bg-teal-l/30" : ""
+              }`}
               style={{ borderTop: `3px solid ${borderCol}` }}
             >
               <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-text3">

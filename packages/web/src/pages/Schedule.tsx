@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   PLANNER_WEEKS,
   allocateWeeks,
@@ -39,6 +40,16 @@ export function Schedule() {
   const [editSkills, setEditSkills] = useState<Operative | null>(null);
   const [editCell, setEditCell] = useState<{ op: Operative; weekKey: string; di: number } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+
+  // The dashboard's 8-week grid links here as ?week=<monday> — scroll that
+  // week's card into view and highlight it (client snag #12).
+  const [params] = useSearchParams();
+  const focusWeek = params.get('week');
+  useEffect(() => {
+    if (!focusWeek || !tickets) return;
+    const el = document.getElementById(`week-${focusWeek}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusWeek, tickets]);
 
   const ops = useMemo(() => operatives ?? [], [operatives]);
   const allTickets = tickets ?? [];
@@ -223,8 +234,14 @@ export function Schedule() {
               const barCol = over ? 'var(--color-red)' : warn ? 'var(--color-amber)' : 'var(--color-teal)';
               const wk = ticketsFor(w.key);
               const late = lateFor(w.key);
+              const focused = w.key === focusWeek;
               return (
-                <div key={w.key} className="mb-2.5 rounded-lg border bg-surface p-3" style={{ borderColor: over ? 'var(--color-red)' : 'var(--color-border)' }}>
+                <div
+                  key={w.key}
+                  id={`week-${w.key}`}
+                  className={`mb-2.5 scroll-mt-16 rounded-lg border bg-surface p-3 ${focused ? 'ring-2 ring-teal' : ''}`}
+                  style={{ borderColor: over ? 'var(--color-red)' : 'var(--color-border)' }}
+                >
                   <div className="mb-2 flex items-center justify-between">
                     <div>
                       <div className="text-[13px] font-bold">{w.label}{w.key === curKey && <span className="ml-1.5 text-[10px] font-normal text-teal">(this week — remaining days)</span>}</div>

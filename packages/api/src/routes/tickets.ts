@@ -93,14 +93,19 @@ export const ticketRoutes: FastifyPluginAsync = async (app) => {
     const data = parse(ticketUpdateSchema, req.body, reply);
     if (data === PARSE_FAILED) return;
     const existing = unwrap(
-      await db.from('tickets').select('unitPrice, qty, orderId, compParentId')
+      await db.from('tickets').select('unitPrice, qty, lamHrs, finHrs, orderId, compParentId')
         .eq('id', id).is('deletedAt', null).maybeSingle(),
-    ) as ({ unitPrice: number; qty: number } & TicketRef) | null;
+    ) as ({ unitPrice: number; qty: number; lamHrs: number | null; finHrs: number | null } & TicketRef) | null;
     if (!existing) return reply.notFound('Ticket not found');
 
     const unitPrice = data.unitPrice ?? existing.unitPrice;
     const qty = data.qty ?? existing.qty;
-    unwrap(await db.from('tickets').update({ ...data, netPrice: unitPrice * qty }).eq('id', id).select('id'));
+    const patch: Record<string, unknown> = { ...data, netPrice: unitPrice * qty };
+    // Editing either labour bucket keeps the back-compat total in step.
+    if (data.hrs == null && (data.lamHrs != null || data.finHrs != null)) {
+      patch.hrs = (data.lamHrs ?? existing.lamHrs ?? 0) + (data.finHrs ?? existing.finHrs ?? 0);
+    }
+    unwrap(await db.from('tickets').update(patch).eq('id', id).select('id'));
     await recomputeForTicket(existing);
     return unwrap(await db.from('tickets').select(SELECT).eq('id', id).maybeSingle());
   });

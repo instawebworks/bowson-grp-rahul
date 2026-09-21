@@ -5,6 +5,7 @@ import { useDespatchTickets, useOverrideDespatch, useTickets } from '../lib/hook
 import { Button, Card, Content, Modal, PageHeader, QueryState, Table } from '../components/ui';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { TicketDetailModal } from '../components/TicketDetailModal';
+import { GroupControls, OrderGroupRow, groupByOrder, useOrderGroups } from '../components/OrderGroups';
 import { buildDespatchHtml, openDocument } from '../lib/documents';
 import type { Ticket } from '../lib/types';
 
@@ -73,6 +74,13 @@ export function Ready() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  /** The order row's checkbox: every despatchable item on that order at once. */
+  const toggleMany = (ids: number[], checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) { if (checked) next.add(id); else next.delete(id); }
       return next;
     });
   const toggleAll = (checked: boolean) =>
@@ -144,13 +152,11 @@ export function Ready() {
     proceedDespatch(ticketIds, false);
   }
 
-  // Group the despatchable rows by order (first row per order carries the order cells).
-  const groupedRows = useMemo(() => {
-    const orderIds = [...new Set(despatchable.map((t) => t.orderId))];
-    return orderIds.flatMap((oid) =>
-      despatchable.filter((t) => t.orderId === oid).map((t, ti) => ({ ticket: t, first: ti === 0 })),
-    );
-  }, [despatchable]);
+  // One row per order with its despatchable items underneath (client snag
+  // #24). Open by default here — selection is the whole point of this page.
+  const groups = useMemo(() => groupByOrder(despatchable), [despatchable]);
+  const og = useOrderGroups(false, true);
+  const COLS = 11;
 
   // The blocked panel reflects the DESPATCH gate (familyReadyCheck): a part
   // counts as done once it reaches Ready to Despatch.
@@ -257,6 +263,7 @@ export function Ready() {
             Select all ({total})
           </label>
           <span className="text-[11px] text-text3">{selCount} selected</span>
+          <span className="ml-2"><GroupControls onExpand={og.expandAll} onCollapse={og.collapseAll} /></span>
           <div className="ml-auto">
             <Button
               variant="primary"
@@ -276,16 +283,42 @@ export function Ready() {
         {/* Ready items */}
         {despatchable.length > 0 && (
           <>
-            <div className="mb-2 text-[11px] font-bold text-text2">● Items ready to despatch ({despatchable.length})</div>
+            <div className="mb-2 text-[11px] font-bold text-text2">● Items ready to despatch ({despatchable.length} across {groups.length} order{groups.length === 1 ? '' : 's'})</div>
             <Card className="mb-5">
               <Table head={['', 'Ticket #', 'Type', 'Order', 'Customer', 'Customer Ref', 'Detail', 'Theme / Spec', 'Qty', 'QC Ref', 'Despatch']}>
-                {groupedRows.map(({ ticket: t, first }) => (
+                {groups.map((g) => [
+                  <OrderGroupRow
+                    key={`g-${g.orderId}`}
+                    order={g.order}
+                    orderId={g.orderId}
+                    count={g.items.length}
+                    countLabel="item"
+                    open={og.isOpen(g.orderId)}
+                    onToggle={() => og.toggle(g.orderId)}
+                    colSpan={COLS}
+                    onOpenOrder={() => navigate(`/orders/${g.orderId}`)}
+                    leading={
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-teal"
+                        title="Select every item on this order"
+                        checked={g.items.every((t) => selected.has(t.id))}
+                        onChange={(e) => toggleMany(g.items.map((t) => t.id), e.target.checked)}
+                      />
+                    }
+                    extra={
+                      <span className="rounded-full border border-border2 bg-surface2 px-2 py-0.5 text-[10px] text-text2">
+                        {g.order?.despatch ?? '—'}
+                      </span>
+                    }
+                  />,
+                  ...(og.isOpen(g.orderId) ? g.items : []).map((t) => (
                   <tr
                     key={t.id}
-                    className={`cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40 ${first ? '' : 'bg-surface2/40'}`}
+                    className="cursor-pointer border-b border-border last:border-0 hover:bg-teal-l/40"
                     onClick={() => setDetailId(t.id)}
                   >
-                    <td className="w-9 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="w-9 px-3 py-2 pl-8" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="h-3.5 w-3.5 accent-teal"
@@ -295,16 +328,10 @@ export function Ready() {
                     </td>
                     <td className="px-3 py-2 font-bold text-teal">#{t.tn ?? 'TBC'}</td>
                     <td className="px-3 py-2"><TypeBadge type={t.type} /></td>
-                    <td className="px-3 py-2">
-                      {first ? <span className="font-medium">{t.order?.orderNumber ?? '—'}</span> : <span className="text-text3">↳</span>}
-                    </td>
+                    <td className="px-3 py-2 text-text3">↳ {t.order?.orderNumber ?? '—'}</td>
                     {/* Customer and ref as separate columns (client email 20 Aug). */}
-                    <td className="max-w-30 truncate px-3 py-2 text-[11px] font-semibold">
-                      {first ? t.order?.customer?.name ?? '—' : ''}
-                    </td>
-                    <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text2">
-                      {first ? t.order?.siteName ?? '—' : ''}
-                    </td>
+                    <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text3">{t.order?.customer?.name ?? '—'}</td>
+                    <td className="max-w-30 truncate px-3 py-2 text-[11px] text-text3">{t.order?.siteName ?? '—'}</td>
                     <td className="max-w-42 truncate px-3 py-2" title={t.detail}>{t.detail}</td>
                     <td className="max-w-32 truncate px-3 py-2 text-[11px] text-text3">{t.spec ?? '—'}</td>
                     <td className="px-3 py-2 text-center text-[11px]">{t.qty || 1}</td>
@@ -315,7 +342,8 @@ export function Ready() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  )),
+                ])}
               </Table>
             </Card>
           </>

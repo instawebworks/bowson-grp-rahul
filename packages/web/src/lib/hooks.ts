@@ -194,10 +194,13 @@ export interface TicketEditInput {
   detail?: string;
   spec?: string | null;
   hrs?: number;
+  lamHrs?: number | null;
+  finHrs?: number | null;
   qty?: number;
   unitPrice?: number;
   drawing?: string | null;
   qcRef?: string | null;
+  resinType?: string | null;
 }
 
 /** Inline edit of a ticket's detail / spec / hrs (used by the Step 2 ticket cards). */

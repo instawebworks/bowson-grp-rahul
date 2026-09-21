@@ -1,14 +1,13 @@
-/** Status → inline colour styles, ported from the prototype's sCls palette. */
+import { STAGE_COLOR } from './stageColors';
+
+/** Status → inline colour styles. The nine production stages take the shared
+ * red → green progression (client snag #16); the rest keep the prototype's
+ * sCls palette. */
+const STAGE_PILLS: Record<string, { bg: string; color: string }> = Object.fromEntries(
+  Object.entries(STAGE_COLOR).map(([status, c]) => [status, { bg: `${c}1f`, color: c }]),
+);
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
-  '1. Spec Required': { bg: '#eeedfd', color: '#4a42b0' },
-  '2. Materials Required': { bg: '#fef0d3', color: '#a86e0a' },
-  '3. Queue - Awaiting Mould': { bg: '#fff4e0', color: '#8a5200' },
-  '4. Gel Coat & Laminate': { bg: '#fff0d8', color: '#7a4800' },
-  '5. Trim & Finish': { bg: '#f3e8fd', color: '#5b21b6' },
-  '6. Assembly': { bg: '#dff2eb', color: '#0c6b50' },
-  '7. QC Check': { bg: '#e8f1fb', color: '#1558a0' },
-  '8. Packing': { bg: '#eaf5e0', color: '#2e6810' },
-  '9. Ready to Despatch': { bg: '#e8f1fb', color: '#1558a0' },
+  ...STAGE_PILLS,
   Despatched: { bg: '#1558a0', color: '#fff' },
   Ordered: { bg: '#fef0d3', color: '#a86e0a' },
   Received: { bg: '#eaf5e0', color: '#2e6810' },

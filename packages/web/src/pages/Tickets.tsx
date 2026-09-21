@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { GRP_STAGES, familyReadyCheck, stageIndex } from '@bowson/shared';
 import { useOperatives, useOrders, useReturnToProduction, useTickets } from '../lib/hooks';
@@ -8,10 +9,12 @@ import { TicketDetailModal } from '../components/TicketDetailModal';
 import { PendingReleaseModal } from '../components/PendingReleaseModal';
 import { ManagerPinGate } from '../components/ManagerPinGate';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
+import { GroupControls, OrderGroupRow, groupByOrder, useOrderGroups } from '../components/OrderGroups';
 import { useAuth } from '../lib/auth';
 import { daysToDeadline } from '../lib/format';
 import type { Ticket } from '../lib/types';
 
+/** Orders per page — the list is one row per order (client snag #22). */
 const PAGE = 15;
 
 // Toolbar control styling (no forced full width, so the row stays compact).
@@ -59,6 +62,7 @@ export function Tickets() {
   const { data: operatives } = useOperatives();
   const returnToProduction = useReturnToProduction();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [showDespatched, setShowDespatched] = useState(false);
@@ -127,9 +131,15 @@ export function Tickets() {
     );
   });
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
+  // One row per order with its tickets in a drop-down (client snag #22);
+  // pages count orders, not tickets. Any search/filter opens every group.
+  const groups = groupByOrder(rows.map((r) => r.ticket));
+  const og = useOrderGroups(!!q.trim() || !!stage || cf.hasFilters);
+  const pageCount = Math.max(1, Math.ceil(groups.length / PAGE));
   const current = Math.min(page, pageCount);
-  const slice = rows.slice((current - 1) * PAGE, current * PAGE);
+  const pageGroups = groups.slice((current - 1) * PAGE, current * PAGE);
+  const slice = pageGroups.flatMap((g) => g.items.map((ticket) => ({ ticket, child: ticket.compParentId != null })));
+  const COLS = 12;
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['tickets'] });
@@ -140,10 +150,23 @@ export function Tickets() {
     qc.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
+  /** Tick a ticket; ticking an assembly ticks all of its parts too, so a whole
+   * product is one click (client snag #20). */
   const toggle = (id: number, checked: boolean) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (checked) next.add(id); else next.delete(id);
+      const ids = [id, ...all.filter((p) => p.compParentId === id).map((p) => p.id)];
+      for (const x of ids) { if (checked) next.add(x); else next.delete(x); }
+      return next;
+    });
+  /** Tick every selectable (non-RAW) ticket on an order from its group row. */
+  const toggleOrder = (tickets: Ticket[], checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const t of tickets) {
+        if (t.type === 'RAW') continue;
+        if (checked) next.add(t.id); else next.delete(t.id);
+      }
       return next;
     });
   const clearSelection = () => setSelected(new Set());
@@ -345,7 +368,10 @@ export function Tickets() {
         </Modal>
       )}
 
-      <PageHeader title="All Tickets" sub={flash || `${rows.length} ticket${rows.length === 1 ? '' : 's'}${cf.hasFilters ? ' — filtered' : ''}`} />
+      <PageHeader
+        title="All Tickets"
+        sub={flash || `${rows.length} ticket${rows.length === 1 ? '' : 's'} across ${groups.length} order${groups.length === 1 ? '' : 's'}${cf.hasFilters ? ' — filtered' : ''}`}
+      />
       <Content>
         {pendingOrders.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber bg-amber-l px-3.5 py-2.5">
@@ -376,6 +402,7 @@ export function Tickets() {
             <input type="checkbox" className="accent-teal" checked={showDespatched} onChange={(e) => { setShowDespatched(e.target.checked); setPage(1); }} />
             Show despatched
           </label>
+          <GroupControls onExpand={og.expandAll} onCollapse={og.collapseAll} />
           {canManage && (
             <span className="ml-auto flex gap-2">
               <Button onClick={() => { setAssignPanel((v) => !v); setAssignOpId(null); }}>⚖ Assign Operative</Button>
@@ -455,11 +482,33 @@ export function Tickets() {
               'Actions',
             ]}
           >
-            <QueryState isLoading={isLoading} error={error} colSpan={12} />
+            <QueryState isLoading={isLoading} error={error} colSpan={COLS} />
             {!isLoading && !error && slice.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-xs text-text3">No tickets.</td></tr>
+              <tr><td colSpan={COLS} className="px-3 py-10 text-center text-xs text-text3">No tickets.</td></tr>
             )}
-            {slice.map(({ ticket: t, child }) => {
+            {pageGroups.map((g) => [
+              <OrderGroupRow
+                key={`g-${g.orderId}`}
+                order={g.order}
+                orderId={g.orderId}
+                count={g.items.length}
+                open={og.isOpen(g.orderId)}
+                onToggle={() => og.toggle(g.orderId)}
+                colSpan={COLS}
+                onOpenOrder={() => navigate(`/orders/${g.orderId}`)}
+                leading={
+                  <input
+                    type="checkbox"
+                    className="accent-teal"
+                    title="Select every ticket on this order"
+                    checked={g.items.filter((t) => t.type !== 'RAW').every((t) => selected.has(t.id)) && g.items.some((t) => t.type !== 'RAW')}
+                    onChange={(e) => toggleOrder(g.items, e.target.checked)}
+                  />
+                }
+                extra={g.order?.status ? <StatusPill status={g.order.status} /> : undefined}
+              />,
+              ...(og.isOpen(g.orderId) ? g.items : []).map((t) => {
+              const child = t.compParentId != null;
               const o = t.order;
               const asmIdx = stageIndex('6. Assembly');
               const parts = t.type === 'COMP' ? all.filter((p) => p.compParentId === t.id) : [];
@@ -514,11 +563,12 @@ export function Tickets() {
                   </td>
                 </tr>
               );
-            })}
+              }),
+            ])}
           </Table>
           <div className="flex items-center justify-between border-t border-border bg-surface2 px-3 py-2 text-xs text-text2">
             <Button onClick={() => setPage(current - 1)} disabled={current <= 1}>← Prev</Button>
-            <span>Page {current} of {pageCount} · {rows.length} ticket{rows.length === 1 ? '' : 's'}</span>
+            <span>Page {current} of {pageCount} · {groups.length} order{groups.length === 1 ? '' : 's'} · {rows.length} ticket{rows.length === 1 ? '' : 's'}</span>
             <Button onClick={() => setPage(current + 1)} disabled={current >= pageCount}>Next →</Button>
           </div>
         </Card>

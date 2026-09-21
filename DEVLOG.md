@@ -1916,6 +1916,70 @@ all three tables.
 
 ---
 
+## 2026-09-21 — September snag list: items 10–28 (dashboard links, grouping, board edits)
+
+**Done**
+- New client doc "Snag on GRP Product Catalogue New.docx" received. Items 1–9
+  re-verified against the code (all in place; 8/9 still need the client's
+  split-hours re-import + multiplier sign-off). Items 10–28 (the "ADDITIONAL
+  SNAGS SEPTEMBER 2026" section) worked one by one:
+  - **#10 dashboard tiles as links** — Active Orders → /orders?view=active,
+    Pending → /orders?status=Pending, Slides → /in-production?kind=slides,
+    Parts → /in-production?type=PART, Moulds → /moulds?filter=inuse, Man
+    Hours → /schedule. `Metric` gained an onClick/hover state.
+  - **#11 hours-by-stage rows link** to In Production pre-filtered to that
+    stage (`useColumnFilters` now accepts initial filters from the URL).
+  - **#12 8-week grid cards link** to /schedule?week=<monday>; the planner
+    scrolls that week's card into view and rings it.
+  - **#13 stage-capacity tiles link** to /operatives?skill=<stage> (list
+    filtered to operatives trained for it, with a clear banner).
+  - **#15** board column "Materials" → "Materials Required" (STAGE_SHORT too).
+  - **#16 one stage palette** (lib/stageColors.ts, red → amber → green in
+    stage order) now drives board columns, status pills and mould badges.
+  - **#17 white titles on the board** — genuine bug: Modal/ConfirmDialog
+    inherited the board's `text-white`. Fixed at the source (text-text).
+  - **#18 edit everything from the board** — EditTicketModal now covers qty,
+    unit price, Laminating/Finishing hours (total shown), drawing, resin, QC
+    ref. `lamHrs`/`finHrs` added to the ticket PATCH schema; the route keeps
+    `hrs` = lam + fin in step.
+  - **#19 View Specs** now names the ticket's own part (detail · drawing ·
+    hours) and highlights its row "THIS PART" in the parts table.
+  - **#20** ticking an assembly ticks all its parts (Order page + All Tickets).
+  - **#22–25 group by order** — new components/OrderGroups.tsx (one row per
+    order, drop-down of tickets, Expand/Collapse all, filters auto-open).
+    Applied to All Tickets (pages now count orders), In Production, Ready to
+    Despatch (order row checkbox selects the whole order), Despatched (order
+    rows open to their tickets; "View" button replaces row-click navigation).
+  - **#26** mould status boxes filter the Mould Board / Register; the active
+    box is ringed; clicking again clears.
+  - **#27** operative view tab "Board" → "T-Card Board".
+  - **#28** global "+ Ticket" removed (NewTicketForm.tsx deleted) — tickets
+    come from Import CSV or an order only; "✎ Edit" added to All Orders rows
+    (Edit order was already on the order page but not being found).
+  - #14 (compliment) and #21 (the concern #22 answers) needed no change.
+- Verified: typecheck + production build clean; headless-browser walk of every
+  changed page signed in as manager — dashboard links, grouping (42 tickets →
+  1 order row, expand → 42; COMP tick → 16 selected), stage/kind/skill/week
+  URL filters, mould filter, Edit order modal, board palette, modal text
+  colour, spec highlight, edit fields; zero console errors. API PATCH probe:
+  lamHrs/finHrs accepted, negatives rejected. No live data changed.
+
+**Features added / modified**
+- Dashboard drill-down links; order-grouped ticket lists; board edit/spec
+  improvements; shared stage palette; mould status filters; global bar.
+
+**Decisions**
+- Grouped lists start collapsed (Ready starts open — selection is its job);
+  any search/filter force-opens groups so matches are never hidden.
+- Palette: Spec/Materials keep the prototype's warn-red on the board.
+
+**Next up**
+- Client to confirm the new stage colours and the collapsed-by-default lists.
+- Ready/Despatched grouping only seen in the empty state on live data —
+  re-check once something reaches Ready to Despatch.
+
+---
+
 ## 2026-09-10 — One scheduling model everywhere: dashboard capacity + spill-over fixed
 
 **Done**

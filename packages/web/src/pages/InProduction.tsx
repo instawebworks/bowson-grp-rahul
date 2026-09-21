@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { stageIndex, GRP_STAGES } from '@bowson/shared';
 import { useChangeTicketStatus, useTickets } from '../lib/hooks';
 import { Button, Card, Content, PageHeader, ProgressBar, QueryState, Spinner, StatusPill, Table } from '../components/ui';
 import { TicketDetailModal } from '../components/TicketDetailModal';
 import { FilterInput, useColumnFilters } from '../components/ColumnFilters';
+import { GroupControls, OrderGroupRow, groupByOrder, useOrderGroups } from '../components/OrderGroups';
 import { useGatedStatusChange } from '../components/TicketStatusSelect';
 import { TypeBadge } from './Tickets';
 import { daysToDeadline } from '../lib/format';
@@ -68,7 +69,11 @@ export function InProduction() {
   const { data, isLoading, error } = useTickets();
   const navigate = useNavigate();
   const [detailId, setDetailId] = useState<number | null>(null);
-  const cf = useColumnFilters();
+  // Dashboard tiles arrive pre-filtered: ?stage=… (hours by stage),
+  // ?type=PART (parts in production), ?kind=slides (MADE + assemblies).
+  const [params] = useSearchParams();
+  const kind = params.get('kind');
+  const cf = useColumnFilters({ stage: params.get('stage') ?? '', type: params.get('type') ?? '' });
 
   const all = useMemo(() => data ?? [], [data]);
 
@@ -87,6 +92,7 @@ export function InProduction() {
 
   const rows = list.filter((t) => {
     const o = t.order;
+    if (kind === 'slides' && t.type === 'PART') return false;
     return (
       cf.match('tn', t.tn) &&
       cf.match('type', t.type) &&
@@ -124,12 +130,28 @@ export function InProduction() {
   // reach Assembly (assembly happens before QC — client snag #4).
   const asmIdx = stageIndex('6. Assembly');
 
+  // One row per order, tickets in a drop-down underneath (client snag #23).
+  // A filter opens every group so matches are never hidden.
+  const groups = groupByOrder(rows);
+  const og = useOrderGroups(cf.hasFilters || !!kind);
+  const COLS = 13;
+
   return (
     <>
       {detailId != null && <TicketDetailModal ticketId={detailId} onClose={() => setDetailId(null)} />}
-      <PageHeader title="In Production" sub={`${rows.length} active ticket${rows.length === 1 ? '' : 's'}${cf.hasFilters ? ' — filtered' : ''}`} />
+      <PageHeader
+        title="In Production"
+        sub={`${rows.length} active ticket${rows.length === 1 ? '' : 's'} across ${groups.length} order${groups.length === 1 ? '' : 's'}${cf.hasFilters || kind ? ' — filtered' : ''}`}
+      />
       <Content>
-        <div className="mb-2.5 flex justify-end">
+        {kind === 'slides' && (
+          <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-teal bg-teal-l px-3.5 py-2 text-xs">
+            <span className="font-semibold text-teal">Showing slides only (MADE &amp; assembly tickets)</span>
+            <Button className="ml-auto" onClick={() => navigate('/in-production')}>✕ Show everything</Button>
+          </div>
+        )}
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <GroupControls onExpand={og.expandAll} onCollapse={og.collapseAll} />
           <Button onClick={exportCsv}>⭱ Export CSV</Button>
         </div>
         <Card>
@@ -150,11 +172,28 @@ export function InProduction() {
               cf.hasFilters ? <Button key="clear" onClick={cf.clear}>✕ Clear</Button> : 'Actions',
             ]}
           >
-            <QueryState isLoading={isLoading} error={error} colSpan={13} />
+            <QueryState isLoading={isLoading} error={error} colSpan={COLS} />
             {!isLoading && !error && rows.length === 0 && (
-              <tr><td colSpan={13} className="px-3 py-10 text-center text-xs text-text3">No tickets in production.</td></tr>
+              <tr><td colSpan={COLS} className="px-3 py-10 text-center text-xs text-text3">No tickets in production.</td></tr>
             )}
-            {rows.map((t) => {
+            {groups.map((g) => [
+              <OrderGroupRow
+                key={`g-${g.orderId}`}
+                order={g.order}
+                orderId={g.orderId}
+                count={g.items.length}
+                open={og.isOpen(g.orderId)}
+                onToggle={() => og.toggle(g.orderId)}
+                colSpan={COLS}
+                onOpenOrder={() => navigate(`/orders/${g.orderId}`)}
+                extra={
+                  <span className="text-[10px] text-text3">
+                    {g.items.filter((t) => t.type !== 'PART').length} slide{g.items.filter((t) => t.type !== 'PART').length === 1 ? '' : 's'} ·{' '}
+                    {g.items.filter((t) => t.type === 'PART').length} part{g.items.filter((t) => t.type === 'PART').length === 1 ? '' : 's'}
+                  </span>
+                }
+              />,
+              ...(og.isOpen(g.orderId) ? g.items : []).map((t) => {
               const o = t.order;
               const isComp = t.type === 'COMP';
               const parts = isComp ? all.filter((p) => p.compParentId === t.id) : [];
@@ -203,7 +242,8 @@ export function InProduction() {
                   </td>
                 </tr>
               );
-            })}
+              }),
+            ])}
           </Table>
         </Card>
       </Content>
