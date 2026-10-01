@@ -1,9 +1,13 @@
-import { useRef, useState } from 'react';
-import { useCreateCatalogue, useMoulds, useUpdateCatalogue } from '../lib/hooks';
-import type { Catalogue } from '../lib/types';
+import { useMemo, useRef, useState } from 'react';
+import { useCatalogueParts, useCreateCatalogue, useUpdateCatalogue } from '../lib/hooks';
+import { PART_QTYS, isSingle, partContribution, partLabel, productTotals, qtyLabel } from '../lib/catalogue';
+import { money } from '../lib/format';
+import type { Catalogue, CataloguePart } from '../lib/types';
 import { Button, Field, FormSection, Modal, inputClass } from './ui';
+import { PartForm } from './PartForm';
 
-interface PartRow { code: string; detail: string; mouldId: string; lam: string; fin: string }
+/** One linked piece on the product being edited. */
+interface Row { partId: number | ''; qty: 1 | 0.5 }
 interface HwRow { name: string; qty: string }
 
 const DEFAULT_HW: HwRow[] = [
@@ -12,51 +16,59 @@ const DEFAULT_HW: HwRow[] = [
   { name: 'Flange Supports', qty: '0' },
 ];
 
-/** Create ("New Product") or edit a catalogue template. */
+/**
+ * Create ("New Product") or edit a catalogue product. A product is BUILT FROM
+ * library parts (client email 1 Oct 2026): pick each piece from the dropdown
+ * at a whole or half mould, and the hours and price roll up from the children.
+ * A product with one part at a whole mould is a single slide — no assembly.
+ */
 export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () => void; onCreated?: (c: Catalogue) => void; catalogue?: Catalogue }) {
   const isEdit = !!catalogue;
   const create = useCreateCatalogue();
   const update = useUpdateCatalogue();
   const pending = create.isPending || update.isPending;
-  const { data: moulds } = useMoulds();
+  const { data: library } = useCatalogueParts();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [newPart, setNewPart] = useState(false);
 
-  const [singlePiece, setSinglePiece] = useState(catalogue?.singlePiece ?? false);
   const [productCode, setProductCode] = useState(catalogue?.productCode ?? '');
   const [name, setName] = useState(catalogue?.name ?? '');
   const [code, setCode] = useState(catalogue?.code ?? '');
-  const [unitPrice, setUnitPrice] = useState(String(catalogue?.unitPrice ?? 0));
-  const [assemblyHrs, setAssemblyHrs] = useState(String(catalogue?.assemblyHrs ?? 0));
   const [gelCure, setGelCure] = useState(String(catalogue?.gelCureMins ?? 60));
   const [lamCure, setLamCure] = useState(String(catalogue?.lamCureMins ?? 120));
-  // Labour split (phase 2): existing rows without a split default to
-  // lam = total hrs, fin = 0 (matches the migration backfill).
-  const [parts, setParts] = useState<PartRow[]>(
-    catalogue?.parts.map((p) => ({
-      code: p.drawing ?? '',
-      detail: p.detail,
-      mouldId: p.mouldId ? String(p.mouldId) : '',
-      lam: String(p.lamHrs ?? p.hrs),
-      fin: String(p.finHrs ?? 0),
-    })) ?? [],
+  const [rows, setRows] = useState<Row[]>(
+    catalogue?.parts.map((p) => ({ partId: p.id, qty: p.qty === 0.5 ? 0.5 : 1 })) ?? [],
   );
-  // A single-piece slide's mould rides on its one implicit part (same
-  // convention as the CSV import and the MADE ticket path).
-  const [singleMouldId, setSingleMouldId] = useState(
-    catalogue?.parts[0]?.mouldId ? String(catalogue.parts[0].mouldId) : '',
-  );
-  // A single's whole-slide labour, split the same way.
-  const [singleLam, setSingleLam] = useState(String(catalogue?.parts[0]?.lamHrs ?? catalogue?.parts[0]?.hrs ?? catalogue?.assemblyHrs ?? 0));
-  const [singleFin, setSingleFin] = useState(String(catalogue?.parts[0]?.finHrs ?? 0));
   const [hardware, setHardware] = useState<HwRow[]>(
     catalogue ? catalogue.hardware.map((h) => ({ name: h.name, qty: String(h.qty) })) : DEFAULT_HW,
   );
   const [spec, setSpec] = useState<string | null>(catalogue?.specUrl ?? null);
   const [specName, setSpecName] = useState<string | null>(catalogue?.specUrl ? 'On file' : null);
 
-  const setPart = (i: number, k: keyof PartRow, v: string) =>
-    setParts((ps) => ps.map((p, j) => (j === i ? { ...p, [k]: v } : p)));
+  // Library lookup — a product may still reference a part that was since
+  // retired from the library, so fall back to the product's own copy.
+  const byId = useMemo(() => {
+    const m = new Map<number, CataloguePart>();
+    for (const p of catalogue?.parts ?? []) m.set(p.id, p);
+    for (const p of library ?? []) m.set(p.id, p);
+    return m;
+  }, [library, catalogue]);
+  const options = useMemo(
+    () => [...(library ?? [])].sort((a, b) => partLabel(a).localeCompare(partLabel(b))),
+    [library],
+  );
+
+  // Derived product figures — the same roll-up the server applies on save.
+  const linked = rows
+    .filter((r) => r.partId !== '' && byId.has(r.partId))
+    .map((r) => ({ ...byId.get(r.partId as number)!, qty: r.qty }));
+  const totals = productTotals(linked);
+  const single = isSingle({ parts: linked });
+  const priceOnFile = catalogue?.unitPrice ?? 0;
+  const priceChanges = isEdit && Math.abs(priceOnFile - totals.price) > 0.005;
+
+  const setRow = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const setHw = (i: number, k: keyof HwRow, v: string) =>
     setHardware((hs) => hs.map((h, j) => (j === i ? { ...h, [k]: v } : h)));
 
@@ -74,36 +86,19 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
       setError('Product code and name are required.');
       return;
     }
-    const sLam = Number(singleLam) || 0;
-    const sFin = Number(singleFin) || 0;
+    const parts = rows.filter((r) => r.partId !== '').map((r) => ({ partId: Number(r.partId), qty: r.qty }));
+    if (!parts.length) {
+      setError('Add at least one part — a product is built from library parts.');
+      return;
+    }
     const input = {
       productCode: productCode.trim(),
       name: name.trim(),
       code: code || null,
-      unitPrice: Number(unitPrice) || 0,
-      singlePiece,
-      // For singles assemblyHrs mirrors the whole-slide total (back-compat).
-      assemblyHrs: singlePiece ? sLam + sFin : Number(assemblyHrs) || 0,
       gelCureMins: gelCure === '' ? null : Number(gelCure),
       lamCureMins: lamCure === '' ? null : Number(lamCure),
       specUrl: spec,
-      parts: singlePiece
-        ? [{
-            detail: name.trim(),
-            drawing: null,
-            hrs: sLam + sFin,
-            lamHrs: sLam,
-            finHrs: sFin,
-            mouldId: singleMouldId ? Number(singleMouldId) : null,
-          }]
-        : parts.filter((p) => p.detail.trim()).map((p) => ({
-            detail: p.detail.trim(),
-            drawing: p.code || null,
-            hrs: (Number(p.lam) || 0) + (Number(p.fin) || 0),
-            lamHrs: Number(p.lam) || 0,
-            finHrs: Number(p.fin) || 0,
-            mouldId: p.mouldId ? Number(p.mouldId) : null,
-          })),
+      parts,
       hardware: hardware.filter((h) => h.name.trim()).map((h) => ({ name: h.name.trim(), qty: Number(h.qty) || 0 })),
     };
     try {
@@ -119,30 +114,34 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
     }
   }
 
+  if (newPart) {
+    return (
+      <PartForm
+        onClose={() => setNewPart(false)}
+        // A part made from here is wanted on this product — add it straight away.
+        onSaved={(p) => setRows((rs) => [...rs, { partId: p.id, qty: 1 }])}
+      />
+    );
+  }
+
+  const cell = 'text-right text-xs tabular-nums text-text2';
+
   return (
     <Modal
       title={isEdit ? `Edit ${catalogue.name}` : 'New Product'}
-      sub={isEdit ? 'Update catalogue template' : 'Add to catalogue — Step 2 will resume when saved'}
+      sub={isEdit ? 'Update catalogue product' : 'Build a product from library parts — Step 2 will resume when saved'}
       onClose={onClose}
-      width="max-w-2xl"
+      width="max-w-3xl"
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={pending}>
+          <Button variant="primary" onClick={() => void submit()} disabled={pending}>
             {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Save to catalogue'}
           </Button>
         </>
       }
     >
-      <FormSection title="Template details">
-        <label className="mb-3 flex items-start gap-2 rounded-lg border border-border bg-surface2 px-3 py-2.5">
-          <input type="checkbox" checked={singlePiece} onChange={(e) => setSinglePiece(e.target.checked)} className="mt-0.5" />
-          <span>
-            <span className="text-xs font-semibold">Single piece slide</span>
-            <span className="block text-[11px] text-text3">Tick if this product is one moulded unit with no sub-assembly.</span>
-          </span>
-        </label>
-
+      <FormSection title="Product details">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Field label="Product code" required>
@@ -156,95 +155,94 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
           <Field label="SKU">
             <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. TLW-2050" />
           </Field>
-          <Field label="Sell price £">
-            <input type="number" min={0} className={inputClass} value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
-          </Field>
-        </div>
-
-        {/* Assembly hours + cure times */}
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            {singlePiece ? (
-              <>
-                <span className="mb-1 block text-[11px] font-semibold text-text2">Labour hours for whole slide</span>
-                <div className="flex items-center gap-2">
-                  <div>
-                    <input type="number" min={0} className={`${inputClass} w-20`} value={singleLam} onChange={(e) => setSingleLam(e.target.value)} title="Laminating hours" />
-                    <div className="mt-0.5 text-[10px] text-text3">Laminating</div>
-                  </div>
-                  <div>
-                    <input type="number" min={0} className={`${inputClass} w-20`} value={singleFin} onChange={(e) => setSingleFin(e.target.value)} title="Finishing hours" />
-                    <div className="mt-0.5 text-[10px] text-text3">Finishing</div>
-                  </div>
-                  <span className="text-[10px] leading-tight text-text3">
-                    Laminating = at the mould (prep, gel, laminate). Finishing = trim → packing.
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="mb-1 block text-[11px] font-semibold text-text2">Labour hours for assembly</span>
-                <div className="flex items-center gap-2">
-                  <input type="number" min={0} className={`${inputClass} w-24`} value={assemblyHrs} onChange={(e) => setAssemblyHrs(e.target.value)} />
-                  <span className="text-[10px] leading-tight text-text3">
-                    Hours for COMP assembly stage (not including part fabrication)
-                  </span>
-                </div>
-              </>
-            )}
-            {singlePiece && (
-              <div className="mt-2">
-                <span className="mb-1 block text-[11px] font-semibold text-text2">Mould</span>
-                <select className={inputClass} value={singleMouldId} onChange={(e) => setSingleMouldId(e.target.value)} title="Default mould">
-                  <option value="">— No mould —</option>
-                  {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
-                </select>
-                <div className="mt-0.5 text-[10px] text-text3">The mould this slide is made on</div>
-              </div>
-            )}
-          </div>
-          <div className="border-l border-border pl-3">
-            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text3">Cure times (optional)</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="mb-1 block text-[10px] font-semibold text-text2">Gel coat cure (mins)</span>
-                <input type="number" min={0} className={inputClass} value={gelCure} onChange={(e) => setGelCure(e.target.value)} />
-                <div className="mt-0.5 text-[10px] text-text3">Default: 60 mins</div>
-              </div>
-              <div>
-                <span className="mb-1 block text-[10px] font-semibold text-text2">Laminating cure (mins)</span>
-                <input type="number" min={0} className={inputClass} value={lamCure} onChange={(e) => setLamCure(e.target.value)} />
-                <div className="mt-0.5 text-[10px] text-text3">Default: 120 mins</div>
-              </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="mb-1 block text-[11px] font-semibold text-text2">Gel coat cure (mins)</span>
+              <input type="number" min={0} className={inputClass} value={gelCure} onChange={(e) => setGelCure(e.target.value)} />
+            </div>
+            <div>
+              <span className="mb-1 block text-[11px] font-semibold text-text2">Laminating cure (mins)</span>
+              <input type="number" min={0} className={inputClass} value={lamCure} onChange={(e) => setLamCure(e.target.value)} />
             </div>
           </div>
         </div>
       </FormSection>
 
-      {!singlePiece && (
-        <FormSection title="Parts / components">
-          {parts.length === 0 && <div className="mb-2 text-xs text-text3">No parts yet — click Add part.</div>}
-          {parts.length > 0 && (
-            <div className="mb-1 grid grid-cols-[1fr_2fr_130px_60px_60px_auto] gap-2 text-[9px] font-bold uppercase tracking-wide text-text3">
-              <span>Code</span><span>Detail</span><span>Mould</span><span>Lam h</span><span>Fin h</span><span />
-            </div>
-          )}
-          {parts.map((p, i) => (
-            <div key={i} className="mb-2 grid grid-cols-[1fr_2fr_130px_60px_60px_auto] items-center gap-2">
-              <input className={inputClass} value={p.code} onChange={(e) => setPart(i, 'code', e.target.value)} placeholder="Part code" />
-              <input className={inputClass} value={p.detail} onChange={(e) => setPart(i, 'detail', e.target.value)} placeholder="Detail / description" />
-              <select className={inputClass} value={p.mouldId} onChange={(e) => setPart(i, 'mouldId', e.target.value)} title="Default mould">
-                <option value="">— No mould —</option>
-                {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
+      <FormSection title="Parts — built from the library">
+        <p className="mb-2 text-[11px] text-text3">
+          Pick each piece from the parts library and say whether it takes a whole mould or half of one.
+          Hours and price add up from the parts below. Need a piece that isn't listed? Create it in the library first.
+        </p>
+        {rows.length > 0 && (
+          <div className="mb-1 grid grid-cols-[1fr_84px_64px_64px_72px_auto] items-center gap-2 text-[9px] font-bold uppercase tracking-wide text-text3">
+            <span>Part</span><span>Mould qty</span><span className="text-right">Lam h</span><span className="text-right">Fin h</span><span className="text-right">Price</span><span />
+          </div>
+        )}
+        {rows.map((r, i) => {
+          const p = r.partId !== '' ? byId.get(r.partId) : undefined;
+          const c = p ? partContribution({ ...p, qty: r.qty }) : null;
+          return (
+            <div key={i} className="mb-2 grid grid-cols-[1fr_84px_64px_64px_72px_auto] items-center gap-2">
+              <select
+                className={inputClass}
+                value={r.partId}
+                onChange={(e) => setRow(i, { partId: e.target.value ? Number(e.target.value) : '' })}
+              >
+                <option value="">{library ? '— Select a part —' : 'Loading parts…'}</option>
+                {/* Keep a part the product already uses selectable even if it
+                    has since been retired from the library. */}
+                {p && library && !options.some((o) => o.id === p.id) && (
+                  <option value={p.id}>{partLabel(p)} (retired)</option>
+                )}
+                {p && !library && <option value={p.id}>{partLabel(p)}</option>}
+                {options.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {partLabel(o)}{o.mould?.ref ? ` [${o.mould.ref}]` : ''}
+                  </option>
+                ))}
               </select>
-              <input type="number" min={0} className={inputClass} value={p.lam} onChange={(e) => setPart(i, 'lam', e.target.value)} placeholder="Lam" title="Laminating hours (at the mould)" />
-              <input type="number" min={0} className={inputClass} value={p.fin} onChange={(e) => setPart(i, 'fin', e.target.value)} placeholder="Fin" title="Finishing hours (trim → packing)" />
-              <button onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))} className="rounded bg-red/10 px-1.5 py-1 text-xs text-red">✕</button>
+              {/* Whole or half mould only (client: "quantities 1 or 0.50 ONLY"). */}
+              <div className="flex overflow-hidden rounded-md border border-border2">
+                {PART_QTYS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setRow(i, { qty: q })}
+                    title={q === 1 ? 'Whole mould' : 'Half a mould'}
+                    className={`flex-1 py-1.5 text-xs font-bold ${r.qty === q ? 'bg-teal text-white' : 'bg-surface text-text2 hover:bg-surface2'}`}
+                  >
+                    {qtyLabel(q)}
+                  </button>
+                ))}
+              </div>
+              <span className={cell}>{c ? c.lam : '—'}</span>
+              <span className={cell}>{c ? c.fin : '—'}</span>
+              <span className={cell}>{c ? money(c.price) : '—'}</span>
+              <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="rounded bg-red/10 px-1.5 py-1 text-xs text-red" title="Remove from product">✕</button>
             </div>
-          ))}
-          <Button onClick={() => setParts((ps) => [...ps, { code: '', detail: '', mouldId: '', lam: '0', fin: '0' }])}>+ Add part</Button>
-        </FormSection>
-      )}
+          );
+        })}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setRows((rs) => [...rs, { partId: '', qty: 1 }])}>+ Add part</Button>
+          <Button onClick={() => setNewPart(true)} title="Create a new unique part in the library, then add it here">+ New library part…</Button>
+          {!(library ?? []).length && <span className="text-[11px] text-amber">The parts library is empty — create your first part.</span>}
+        </div>
+
+        {/* Roll-up — what the server will store on save. */}
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface2 px-3 py-2.5 md:grid-cols-5">
+          <Stat label="Type" value={linked.length ? (single ? 'Single slide' : `Assembly · ${linked.length} pieces`) : '—'} />
+          <Stat label="Laminating" value={`${totals.lam}h`} />
+          <Stat label="Finishing" value={`${totals.fin}h`} />
+          <Stat label="Total hours" value={`${totals.hrs}h`} strong />
+          <Stat label="Sell price" value={money(totals.price)} strong />
+        </div>
+        {priceChanges && (
+          <div className="mt-2 rounded-md border border-amber bg-amber-l px-3 py-2 text-[11px] text-[#7a4800]">
+            ⚠ Price on file is <strong>{money(priceOnFile)}</strong>; saving sets it to the parts total <strong>{money(totals.price)}</strong>.
+            {totals.price === 0 && ' Set prices on the parts in the library to build it up.'}
+          </div>
+        )}
+      </FormSection>
 
       <FormSection title="Specification document">
         <p className="mb-2 text-[11px] text-text3">Upload a PDF or image specification for this product.</p>
@@ -272,5 +270,14 @@ export function CatalogueForm({ onClose, onCreated, catalogue }: { onClose: () =
 
       {error && <div className="mt-1 rounded-md bg-red/10 px-3 py-2 text-xs text-red">{error}</div>}
     </Modal>
+  );
+}
+
+function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div>
+      <div className="text-[9px] font-bold uppercase tracking-wide text-text3">{label}</div>
+      <div className={`text-xs ${strong ? 'font-bold' : 'font-medium'}`}>{value}</div>
+    </div>
   );
 }

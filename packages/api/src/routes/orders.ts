@@ -36,6 +36,7 @@ const addTicketSchema = z.object({
   partSpecs: z.array(z.string().nullable()).optional(),
 });
 
+/** A library part as linked to a product (via catalogue_product_parts). */
 interface CatPart {
   id: number;
   detail: string;
@@ -47,6 +48,8 @@ interface CatPart {
   price: number;
   drawing: string | null;
   mouldId: number | null;
+  /** 1 = whole mould, 0.5 = half — scales hours and price for this piece. */
+  qty: number;
 }
 
 /** Convert nullable Date inputs to ISO strings for Supabase. */
@@ -180,19 +183,34 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
     const themeImage = body.themeImage ?? order.themeImage ?? null;
 
     if (body.fromCatalogueId != null) {
-      const tpl = unwrap(
-        await db.from('catalogue').select('*, parts:catalogue_parts(*)')
+      const raw = unwrap(
+        await db.from('catalogue')
+          .select('*, links:catalogue_product_parts(id, qty, sort, part:catalogue_parts(*))')
           .eq('id', body.fromCatalogueId).is('deletedAt', null).maybeSingle(),
-      ) as { name: string; drawing: string | null; unitPrice: number; assemblyHrs: number; parts: CatPart[] } | null;
-      if (!tpl) return reply.badRequest('fromCatalogueId does not reference a catalogue item');
+      ) as {
+        name: string; drawing: string | null; unitPrice: number;
+        links: { id: number; qty: number; sort: number; part: Omit<CatPart, 'qty'> | null }[];
+      } | null;
+      if (!raw) return reply.badRequest('fromCatalogueId does not reference a catalogue item');
+      // Parts in the product's link order — the same order the catalogue API
+      // and the import wizard use, so per-part colour overrides line up.
+      const tpl = {
+        ...raw,
+        parts: (raw.links ?? [])
+          .filter((l) => l.part)
+          .sort((a, b) => a.sort - b.sort || a.id - b.id)
+          .map((l): CatPart => ({ ...l.part!, qty: l.qty })),
+      };
 
       const resin = body.resin ?? order.resinType ?? 'Standard';
       const resinTag = resin === 'M2' ? ' / M2 RESIN' : '';
       const colour = (body.colour ?? '').trim();
       const spec = colour ? colour + resinTag : resinTag.replace(/^\s*\/\s*/, '') || null;
-      const parts = (tpl.parts ?? []).slice().sort((a, b) => a.id - b.id);
+      const parts = tpl.parts;
       // Optional price override (e.g. from CSV import); defaults to the template price.
       const price = body.unitPrice ?? tpl.unitPrice;
+      // A half-mould piece is labelled so the shop floor can see it.
+      const partDetail = (p: CatPart) => (p.qty === 0.5 ? `${p.detail} (½ MOULD)` : p.detail);
 
       // Finish-type multipliers (phase 2): scale the labour buckets once, at
       // the point of order. No finish type (or PLAIN) = ×1.
@@ -210,13 +228,12 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
       const r2 = (n: number) => Math.round(n * 100) / 100;
 
       if (parts.length <= 1) {
+        // A single piece — just the one library part, no assembly. Its hours
+        // and price scale by the mould fraction (1 or 0.5).
         const p = parts[0];
-        // Whole-slide hours live on the implicit part, else fall back to
-        // assemblyHrs (the form's "Labour hours for whole slide"). Labour
-        // split snapshot: unsplit hours count as Laminating (phase 2).
-        const total = p?.hrs || tpl.assemblyHrs || 0;
-        const lam = r2((p?.lamHrs ?? total) * lamMult);
-        const fin = r2((p?.finHrs ?? 0) * finMult);
+        const q = p?.qty ?? 1;
+        const lam = r2((p?.lamHrs ?? p?.hrs ?? 0) * q * lamMult);
+        const fin = r2((p?.finHrs ?? 0) * q * finMult);
         unwrap(
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'MADE', detail: tpl.name,
@@ -228,25 +245,26 @@ export const orderRoutes: FastifyPluginAsync = async (app) => {
           }).select('id'),
         );
       } else {
-        // Assembly-stage labour belongs to the Finishing bucket (phase 2).
-        const compFin = r2((tpl.assemblyHrs ?? 0) * finMult);
+        // An assembly's labour is entirely its children's (client: "built up
+        // on all the child pieces") — the COMP ticket itself carries none.
         const comp = unwrap(
           await db.from('tickets').insert({
             orderId: id, tn: tnFor(), type: 'COMP', detail: tpl.name, spec,
             drawing: tpl.drawing ?? null, status: '1. Spec Required', pct: 0, wc: order.wc,
-            hrs: compFin, lamHrs: 0, finHrs: compFin, finishTypeId,
+            hrs: 0, lamHrs: 0, finHrs: 0, finishTypeId,
             qty: 1, unitPrice: price, netPrice: price, resinType: resin, themeImage,
           }).select('id').single(),
         ) as { id: number };
         const partRows = parts.map((p, i) => {
-          const lam = r2((p.lamHrs ?? p.hrs ?? 0) * lamMult);
-          const fin = r2((p.finHrs ?? 0) * finMult);
+          const lam = r2((p.lamHrs ?? p.hrs ?? 0) * p.qty * lamMult);
+          const fin = r2((p.finHrs ?? 0) * p.qty * finMult);
+          const partPrice = r2((p.price ?? 0) * p.qty);
           return {
-            orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: p.detail,
+            orderId: id, tn: tnFor(), type: 'PART', compParentId: comp.id, detail: partDetail(p),
             spec: body.partSpecs?.[i] || spec || p.spec || null, drawing: p.drawing ?? null, status: '1. Spec Required',
-            pct: 0, wc: order.wc, hrs: r2(lam + fin), qty: 1, unitPrice: p.price ?? 0,
+            pct: 0, wc: order.wc, hrs: r2(lam + fin), qty: 1, unitPrice: partPrice,
             lamHrs: lam, finHrs: fin, finishTypeId,
-            netPrice: p.price ?? 0, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
+            netPrice: partPrice, mouldId: p.mouldId ?? null, resinType: resin, themeImage,
           };
         });
         unwrap(await db.from('tickets').insert(partRows).select('id'));

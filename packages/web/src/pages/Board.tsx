@@ -28,6 +28,7 @@ import { Spinner } from '../components/ui';
 import { daysToDeadline, fmtElapsed, initials } from '../lib/format';
 import type { Operative, Ticket } from '../lib/types';
 import { STAGE_COLOR } from '../lib/stageColors';
+import { findTemplateForTicket } from '../lib/catalogue';
 
 type View = 'stage' | 'ops';
 
@@ -109,9 +110,7 @@ export function Board() {
    * (ported from openCureTimerPrompt's template lookup). */
   function cureDefaultFor(ticketId: number, stage: string): number {
     const t = (data ?? []).find((x) => x.id === ticketId);
-    const tpl = t
-      ? (catalogue ?? []).find((c) => c.name === t.detail || c.parts.some((p) => p.detail === t.detail))
-      : undefined;
+    const tpl = t ? findTemplateForTicket(catalogue ?? [], t) : undefined;
     if (stage === '4. Gel Coat & Laminate') return tpl?.gelCureMins || 60;
     return tpl?.lamCureMins || 120;
   }

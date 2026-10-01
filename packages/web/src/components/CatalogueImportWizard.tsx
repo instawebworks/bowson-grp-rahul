@@ -3,43 +3,49 @@ import { useQueryClient } from '@tanstack/react-query';
 import { generateSku } from '@bowson/shared';
 import { apiClient } from '../lib/api';
 import { parseCsv } from '../lib/csv';
-import { useMoulds } from '../lib/hooks';
+import { useCatalogueParts, useMoulds } from '../lib/hooks';
+import { partKey, r2 } from '../lib/catalogue';
 import { Button, Modal } from './ui';
-import type { Catalogue, Mould } from '../lib/types';
+import type { Catalogue, CataloguePart, Mould } from '../lib/types';
 
 /**
- * Catalogue CSV import wizard — ported from the prototype's catImport flow:
- * 1 template/format · 2 upload · 3 define SKUs (type + dimensions, live
- * preview) · 4 review (new/update, errors/warnings) · 5 confirm + import
- * with UPSERT on product code.
+ * Catalogue CSV import wizard — ported from the prototype's catImport flow and
+ * re-based on the parts library (client email 1 Oct 2026):
+ * 1 template/format · 2 upload · 3 define SKUs · 4 review · 5 confirm.
+ *
+ * Parts are the unit of truth. A part row names a library part by
+ * part_code (+ part_detail); if it isn't in the library yet it is CREATED
+ * from the row (hours / price / mould), otherwise the existing part is
+ * reused untouched. Products then link those parts at part_qty 1 or 0.5 and
+ * their hours and price roll up — sell_price / assembly_hrs columns are
+ * accepted for old files but ignored with a warning.
  */
 
 interface ParsedPart {
+  code: string;
   detail: string;
-  drawing: string | null;
-  /** Total hours = lam + fin (back-compat). */
-  hrs: number;
-  /** Labour split (phase 2); a lone part_hrs lands in the Laminating bucket. */
+  qty: 1 | 0.5;
   lamHrs: number;
   finHrs: number;
-  mouldId: string; // '' = no mould (same convention as CatalogueForm)
+  price: number;
+  mouldId: string; // '' = no mould (same convention as the forms)
+  /** Existing library part this row resolved to, else null = will be created. */
+  existingId: number | null;
+  key: string;
 }
 
 /** Read a part row's hour columns: split if given, else part_hrs as Laminating. */
-function readPartHours(r: Record<string, string | undefined>): { hrs: number; lamHrs: number; finHrs: number } {
+function readPartHours(r: Record<string, string | undefined>): { lamHrs: number; finHrs: number } {
   const lam = Number(r.part_lam_hrs ?? 0) || 0;
   const fin = Number(r.part_fin_hrs ?? 0) || 0;
-  if (lam || fin) return { hrs: lam + fin, lamHrs: lam, finHrs: fin };
+  if (lam || fin) return { lamHrs: lam, finHrs: fin };
   const total = Number(r.part_hrs ?? 0) || 0;
-  return { hrs: total, lamHrs: total, finHrs: 0 };
+  return { lamHrs: total, finHrs: 0 };
 }
 
 interface ParsedProduct {
   productCode: string;
   name: string;
-  isSingle: boolean;
-  unitPrice: number;
-  assemblyHrs: number;
   parts: ParsedPart[];
   sku: string;
   // SKU-builder state (ported from buildSku/updateSkuPreview)
@@ -73,13 +79,17 @@ function buildSku(p: ParsedProduct): string {
 
 /** Download the example template (ported from dlCatalogueTemplate). */
 function downloadTemplate() {
-  const header = 'product_code,name,type,sell_price,assembly_hrs,notes,part_detail,part_code,part_hrs,part_lam_hrs,part_fin_hrs,part_mould';
+  const header = 'product_code,name,notes,part_code,part_detail,part_qty,part_lam_hrs,part_fin_hrs,part_price,part_mould';
   const ex = [
-    '10420,Twin Lane Wavy Slide,ASSEMBLY,2850.00,2.5,Standard colours,,,,,, ',
-    ',,,,,,Lane part left,B2-2LA-3600-L,,5.5,3.0,M-014',
-    ',,,,,,Lane part right,B2-2LA-3600-R,,5.5,3.0,M-015',
-    ',,,,,,Start section,B2-2LA-3600-S,6.0,,,',
-    '10512,40 Degree Racing Slide,SINGLE,1200.00,0,,,,,,,',
+    ',,,12347,GRP START PANEL,,5.33,0.75,180,M-014',
+    ',,,12349,1100R 90 DEGREE TUBE SECTION,,8.5,1,420,M-015',
+    ',,,13481,STRAIGHT HALF TUBE SECTION / 1922MM,,5.25,0.5,260,M-016',
+    '13609,Spiral Tube Slide with Start Panel,Standard colours,,,,,,,',
+    ',,,12347,,1,,,,',
+    ',,,12349,,1,,,,',
+    ',,,12349,,1,,,,',
+    ',,,13481,,0.5,,,,',
+    '12609,Toddler Single Lane,,TSL-1200,TODDLER SINGLE LANE BODY,1,11.33,0,360,M-020',
   ].join('\r\n');
   const blob = new Blob([`﻿${header}\r\n${ex}`], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -92,101 +102,154 @@ function downloadTemplate() {
 export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catalogue[]; onClose: () => void }) {
   const qc = useQueryClient();
   const { data: moulds } = useMoulds();
+  const { data: library } = useCatalogueParts();
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(1);
   const [parsed, setParsed] = useState<ParsedProduct[]>([]);
+  /** Part rows before any product — library-only entries. */
+  const [standalone, setStandalone] = useState<ParsedPart[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState('');
   const [skuMissing, setSkuMissing] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<{ added: number; updated: number } | null>(null);
+  const [done, setDone] = useState<{ added: number; updated: number; partsAdded: number } | null>(null);
 
   const existsFor = (code: string) => catalogue.find((c) => c.productCode === code);
   const newCount = useMemo(() => parsed.filter((p) => !existsFor(p.productCode)).length, [parsed, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Parse the CSV (ported from runCatImportParse): a product_code row starts a
-   * product; blank-code rows add parts to the previous one. */
+  /** Every distinct part this import will CREATE (dedup by key across rows). */
+  const newParts = useMemo(() => {
+    const seen = new Map<string, ParsedPart>();
+    for (const p of [...standalone, ...parsed.flatMap((pr) => pr.parts)]) {
+      if (p.existingId == null && !seen.has(p.key)) seen.set(p.key, p);
+    }
+    return [...seen.values()];
+  }, [standalone, parsed]);
+
+  /** Parse the CSV: a product_code row starts a product; blank-code rows are
+   * part rows — for the product above, or library-only before any product. */
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setStatus('');
     const rows = parseCsv(await file.text());
     const out: ParsedProduct[] = [];
+    const loose: ParsedPart[] = [];
     const errs: string[] = [];
     const warns: string[] = [];
+    const lib = library ?? [];
+    const byKey = new Map(lib.map((p) => [partKey(p.drawing, p.detail), p]));
+    const byCode = new Map<string, CataloguePart[]>();
+    for (const p of lib) {
+      const k = (p.drawing ?? '').trim().toUpperCase();
+      if (k) byCode.set(k, [...(byCode.get(k) ?? []), p]);
+    }
+    /** Parts created earlier in THIS file (so a product can use them below). */
+    const inFile = new Map<string, ParsedPart>();
     let last: ParsedProduct | null = null;
+    let legacyCols = false;
+
+    const readPart = (r: Record<string, string | undefined>, ri: number): ParsedPart | null => {
+      const code = (r.part_code ?? r.part_drawing ?? '').trim();
+      let detail = (r.part_detail ?? '').trim();
+      if (!code && !detail) return null;
+      const qtyRaw = (r.part_qty ?? '').trim();
+      const qtyNum = qtyRaw ? Number(qtyRaw) : 1;
+      if (qtyNum !== 1 && qtyNum !== 0.5) {
+        errs.push(`Row ${ri + 2}: part_qty "${qtyRaw}" — must be 1 (whole mould) or 0.5 (half)`);
+        return null;
+      }
+      const qty = qtyNum as 1 | 0.5;
+      const mouldRef = (r.part_mould ?? '').trim();
+      const mould = mouldRef ? (moulds ?? []).find((m) => m.ref.toLowerCase() === mouldRef.toLowerCase()) : undefined;
+      if (mouldRef && !mould) warns.push(`Row ${ri + 2}: mould ref "${mouldRef}" not found in the mould register — part will import with no mould`);
+
+      // Resolve against the library: code + detail, else a code that names
+      // exactly one part, else (earlier in this file) a part created above.
+      let existing: CataloguePart | undefined;
+      if (detail) existing = byKey.get(partKey(code, detail));
+      if (!existing && code && !detail) {
+        const cands = byCode.get(code.toUpperCase()) ?? [];
+        if (cands.length === 1) {
+          existing = cands[0];
+          detail = existing!.detail;
+        } else if (cands.length > 1) {
+          errs.push(`Row ${ri + 2}: part code "${code}" matches ${cands.length} library parts — add part_detail to say which`);
+          return null;
+        }
+      }
+      const key = partKey(code, detail);
+      if (!existing) {
+        const earlier = inFile.get(key) ?? (code && !detail ? [...inFile.values()].find((p) => p.code.toUpperCase() === code.toUpperCase()) : undefined);
+        if (earlier) return { ...earlier, qty };
+        if (!detail) {
+          errs.push(`Row ${ri + 2}: part code "${code}" is not in the library — add part_detail (and hours) to create it`);
+          return null;
+        }
+      }
+      const part: ParsedPart = {
+        code,
+        detail,
+        qty,
+        ...readPartHours(r),
+        price: Number(r.part_price ?? 0) || 0,
+        mouldId: mould ? String(mould.id) : '',
+        existingId: existing?.id ?? null,
+        key,
+      };
+      if (!existing) {
+        inFile.set(key, part);
+        if (!part.lamHrs && !part.finHrs) warns.push(`Row ${ri + 2}: new part "${detail}" has no hours`);
+      }
+      return part;
+    };
+
     rows.forEach((r, ri) => {
       const code = (r.product_code ?? '').trim();
       const name = (r.name ?? '').trim();
-      const partDetail = (r.part_detail ?? '').trim();
-      if (!code && !name && !partDetail) return; // blank row
-      if (!code && last) {
-        if (!partDetail) {
-          warns.push(`Row ${ri + 2}: part row with no part_detail — skipped`);
-          return;
-        }
-        const mouldRef = (r.part_mould ?? '').trim();
-        const mould = mouldRef ? (moulds ?? []).find((m) => m.ref.toLowerCase() === mouldRef.toLowerCase()) : undefined;
-        if (mouldRef && !mould) warns.push(`Row ${ri + 2}: mould ref "${mouldRef}" not found in the mould register — part will import with no mould`);
-        last.parts.push({
-          detail: partDetail,
-          drawing: (r.part_code ?? r.part_drawing ?? '').trim() || null,
-          ...readPartHours(r),
-          mouldId: mould ? String(mould.id) : '',
-        });
+      if ((r.sell_price ?? '').trim() || (r.assembly_hrs ?? '').trim() || (r.type ?? '').trim()) legacyCols = true;
+      const hasPart = (r.part_code ?? r.part_drawing ?? '').trim() || (r.part_detail ?? '').trim();
+      if (!code && !name && !hasPart) return; // blank row
+      if (!code) {
+        const part = readPart(r, ri);
+        if (!part) return;
+        if (last) last.parts.push(part);
+        else loose.push(part);
         return;
       }
-      if (!code) { errs.push(`Row ${ri + 2}: missing product_code`); return; }
       if (!name) { errs.push(`Row ${ri + 2}: missing name`); return; }
-      const type = (r.type ?? '').trim().toUpperCase();
       const prod: ParsedProduct = {
         productCode: code,
         name,
-        isSingle: type === 'SINGLE' || type === 'MADE' || type === '1' || type === 'SLIDE',
-        unitPrice: Number(r.sell_price ?? 0) || 0,
-        assemblyHrs: Number(r.assembly_hrs ?? 0) || 0,
         parts: [],
         sku: generateSku(code, name, catalogue),
         skuType: '',
         h: '', l: '', r: '', d: '',
       };
-      // Part fields on the product row itself — how a single-piece product
-      // carries its mould (it has no separate part rows).
-      const inlineDetail = (r.part_detail ?? '').trim();
-      const inlineMouldRef = (r.part_mould ?? '').trim();
-      if (inlineDetail || inlineMouldRef) {
-        const mould = inlineMouldRef ? (moulds ?? []).find((m) => m.ref.toLowerCase() === inlineMouldRef.toLowerCase()) : undefined;
-        if (inlineMouldRef && !mould) warns.push(`Row ${ri + 2}: mould ref "${inlineMouldRef}" not found in the mould register — part will import with no mould`);
-        prod.parts.push({
-          detail: inlineDetail || name,
-          drawing: (r.part_code ?? '').trim() || null,
-          ...readPartHours(r),
-          mouldId: mould ? String(mould.id) : '',
-        });
+      // Part fields on the product row itself — a single-piece product.
+      if (hasPart) {
+        const part = readPart(r, ri);
+        if (part) prod.parts.push(part);
       }
       out.push(prod);
       last = prod;
     });
-    // Validation warnings (ported). A single may carry ONE part row — that is
-    // how its mould/hours are recorded — but several means it is an assembly.
+    if (legacyCols) warns.push('sell_price / assembly_hrs / type columns are ignored — price, hours and type now come from the parts');
     for (const pr of out) {
-      if (!pr.isSingle && pr.parts.length === 0) warns.push(`Product "${pr.name}" (${pr.productCode}): type is ASSEMBLY but no parts found`);
-      if (pr.isSingle && pr.parts.length > 1) {
-        warns.push(`Product "${pr.name}": type is SINGLE but has ${pr.parts.length} part rows — treating as ASSEMBLY`);
-        pr.isSingle = false;
-      }
+      if (pr.parts.length === 0) errs.push(`Product "${pr.name}" (${pr.productCode}) has no parts — a product is built from library parts`);
     }
     setParsed(out);
+    setStandalone(loose);
     setErrors(errs);
     setWarnings(warns);
     if (errs.length) {
       setStatus(`⛔ ${errs.length} error${errs.length > 1 ? 's' : ''} found. Fix and re-upload.`);
-    } else if (!out.length) {
-      setStatus('⛔ No products found in the file.');
+    } else if (!out.length && !loose.length) {
+      setStatus('⛔ No products or parts found in the file.');
     } else {
-      setStatus(`✓ Parsed ${out.length} products.`);
-      setTimeout(() => setStep(3), 500);
+      setStatus(`✓ Parsed ${out.length} product${out.length === 1 ? '' : 's'} and ${loose.length} library-only part${loose.length === 1 ? '' : 's'}.`);
+      setTimeout(() => setStep(out.length ? 3 : 4), 500);
     }
     if (fileRef.current) fileRef.current.value = '';
   }
@@ -201,12 +264,12 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
       }),
     );
 
-  const setPartMould = (pi: number, pti: number, mouldId: string) =>
-    setParsed((prev) =>
-      prev.map((p, i) =>
-        i === pi ? { ...p, parts: p.parts.map((pt, j) => (j === pti ? { ...pt, mouldId } : pt)) } : p,
-      ),
-    );
+  /** Mould for a NEW part — applied to every row sharing that part key. */
+  const setNewPartMould = (key: string, mouldId: string) => {
+    const apply = (p: ParsedPart) => (p.key === key && p.existingId == null ? { ...p, mouldId } : p);
+    setParsed((prev) => prev.map((pr) => ({ ...pr, parts: pr.parts.map(apply) })));
+    setStandalone((prev) => prev.map(apply));
+  };
 
   /** Validate all SKUs are defined before Review (ported from saveCatSkus). */
   function toReview() {
@@ -215,22 +278,37 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
     if (!missing.length) setStep(4);
   }
 
-  /** Import — UPSERT on product code (ported from confirmCatalogueImport). */
+  /** Import: parts first (create the new ones), then products with links —
+   * UPSERT on product code (ported from confirmCatalogueImport). */
   async function runImport() {
     setBusy(true);
     let added = 0;
     let updated = 0;
+    let partsAdded = 0;
+    const idByKey = new Map<string, number>();
+    for (const p of library ?? []) idByKey.set(partKey(p.drawing, p.detail), p.id);
     try {
+      for (const np of newParts) {
+        try {
+          const created = await apiClient.post<CataloguePart>('/api/catalogue/parts', {
+            detail: np.detail,
+            drawing: np.code || null,
+            lamHrs: np.lamHrs,
+            finHrs: np.finHrs,
+            price: np.price,
+            mouldId: np.mouldId ? Number(np.mouldId) : null,
+          });
+          idByKey.set(np.key, created.id);
+          partsAdded++;
+        } catch {
+          /* likely a 409 race — the product link below will report it */
+        }
+      }
       for (const p of parsed) {
-        const body = {
-          productCode: p.productCode,
-          name: p.name,
-          code: p.sku,
-          unitPrice: p.unitPrice,
-          singlePiece: p.isSingle,
-          assemblyHrs: p.assemblyHrs,
-          parts: p.parts.map((pt) => ({ detail: pt.detail, drawing: pt.drawing, hrs: pt.hrs, lamHrs: pt.lamHrs, finHrs: pt.finHrs, price: 0, mouldId: pt.mouldId ? Number(pt.mouldId) : null })),
-        };
+        const links = p.parts
+          .map((pt) => ({ partId: pt.existingId ?? idByKey.get(pt.key), qty: pt.qty }))
+          .filter((l): l is { partId: number; qty: 1 | 0.5 } => l.partId != null);
+        const body = { productCode: p.productCode, name: p.name, code: p.sku, parts: links };
         const existing = existsFor(p.productCode);
         try {
           if (existing) {
@@ -247,13 +325,15 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
     } finally {
       setBusy(false);
       qc.invalidateQueries({ queryKey: ['catalogue'] });
-      setDone({ added, updated });
+      qc.invalidateQueries({ queryKey: ['catalogue-parts'] });
+      setDone({ added, updated, partsAdded });
     }
   }
 
   const stepTitle = ['Download template', 'Upload CSV', 'Define SKUs', 'Review', 'Confirm'][step - 1];
   const lbl = 'text-[11px] font-bold uppercase tracking-wide text-text3';
   const inp = 'mt-1 w-full rounded-md border border-border2 bg-surface px-2 py-1.5 text-xs outline-none focus:border-teal';
+  const mouldRef = (id: string) => (moulds ?? []).find((m) => String(m.id) === id)?.ref;
 
   return (
     <Modal
@@ -276,7 +356,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
             )}
             {step === 5 && (
               <Button variant="primary" disabled={busy} onClick={() => void runImport()}>
-                {busy ? 'Importing…' : `Import ${parsed.length} product${parsed.length !== 1 ? 's' : ''}`}
+                {busy ? 'Importing…' : `Import ${newParts.length} part${newParts.length !== 1 ? 's' : ''} + ${parsed.length} product${parsed.length !== 1 ? 's' : ''}`}
               </Button>
             )}
           </>
@@ -287,20 +367,20 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
         <div className="py-8 text-center">
           <div className="mb-2 text-4xl">✓</div>
           <div className="text-sm font-bold">Import complete</div>
-          <div className="mt-1 text-xs text-text2">{done.added} added · {done.updated} updated</div>
+          <div className="mt-1 text-xs text-text2">{done.partsAdded} library part{done.partsAdded === 1 ? '' : 's'} added · {done.added} product{done.added === 1 ? '' : 's'} added · {done.updated} updated</div>
         </div>
       ) : step === 1 ? (
         <>
           <p className="mb-3 text-xs text-text2">
-            Download the CSV template, fill it in, then upload it in the next step. Format rules:
+            Download the CSV template, fill it in, then upload it in the next step. Parts come first — products are built from them:
           </p>
           <ul className="mb-4 ml-4 list-disc text-[11px] leading-6 text-text2">
-            <li>A row with a <strong>product_code</strong> starts a product (name required; type SINGLE / SLIDE or ASSEMBLY).</li>
-            <li>Rows with a blank product_code add <strong>parts</strong> to the product above (part_detail, part_code, part_lam_hrs, part_fin_hrs, part_mould).</li>
-            <li><strong>Hours split:</strong> part_lam_hrs = laminating (at the mould), part_fin_hrs = finishing (trim → packing). A lone part_hrs still works and counts as laminating.</li>
-            <li><strong>part_mould</strong> is optional — the mould ref from the mould register (e.g. M-014). Unmatched refs import with no mould; you can also set moulds in the Define SKUs step.</li>
-            <li>For a <strong>single-piece</strong> product, put its mould in part_mould on the product row itself.</li>
-            <li>Existing products with a matching product code will be <strong>updated</strong>.</li>
+            <li>A row with <strong>part_code</strong> (and a blank product_code, before any product) adds a part to the <strong>parts library</strong>: part_detail, part_lam_hrs, part_fin_hrs, part_price, part_mould.</li>
+            <li>A row with a <strong>product_code</strong> starts a product (name required).</li>
+            <li>Part rows under a product <strong>link</strong> that part at <strong>part_qty</strong> 1 (whole mould) or 0.5 (half). Give part_code only if the part is already in the library; add part_detail + hours to create it on the spot.</li>
+            <li>The same part can appear more than once under a product. Its hours and price roll up into the product — there is no separate sell price or assembly hours.</li>
+            <li>A single-piece product is a product row with its one part on the same line.</li>
+            <li>Existing products with a matching product code are <strong>updated</strong>; existing library parts are reused as they are.</li>
           </ul>
           <Button variant="primary" onClick={downloadTemplate}>⭳ Download CSV template</Button>
         </>
@@ -333,7 +413,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
                 <div>
                   <div className="text-[13px] font-bold">{p.productCode} — {p.name}</div>
                   <div className="mt-0.5 text-[11px] text-text3">
-                    {p.parts.length} part{p.parts.length !== 1 ? 's' : ''}{p.assemblyHrs ? ` · ${p.assemblyHrs}h assembly` : ''}
+                    {p.parts.length} piece{p.parts.length !== 1 ? 's' : ''} · {p.parts.filter((x) => x.existingId == null).length} new to the library
                   </div>
                 </div>
                 <div className="min-w-28 rounded-full bg-teal-l px-3 py-1 text-center text-xs font-bold text-teal">{p.sku || '—'}</div>
@@ -395,25 +475,26 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
                   )}
                 </div>
               </div>
-              {p.parts.length > 0 && (
-                <div className="mt-2 border-t border-border pt-2">
-                  <div className={lbl}>Part moulds (optional)</div>
-                  {p.parts.map((pt, pti) => (
-                    <div key={pti} className="mt-1.5 grid grid-cols-[1fr_150px] items-center gap-2">
-                      <div className="truncate text-[11px] text-text2">
-                        {pt.detail}
-                        {pt.drawing && <span className="ml-1.5 font-mono text-[10px] text-text3">{pt.drawing}</span>}
-                      </div>
-                      <select value={pt.mouldId} onChange={(e) => setPartMould(pi, pti, e.target.value)} title="Default mould" className={inp.replace('mt-1 ', '')}>
-                        <option value="">— No mould —</option>
-                        {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
+          {newParts.length > 0 && (
+            <div className="rounded-lg border border-border bg-surface px-3.5 py-3">
+              <div className={lbl}>Moulds for new library parts (optional)</div>
+              {newParts.map((pt) => (
+                <div key={pt.key} className="mt-1.5 grid grid-cols-[1fr_150px] items-center gap-2">
+                  <div className="truncate text-[11px] text-text2">
+                    {pt.code && <span className="mr-1.5 font-mono text-[10px] text-text3">{pt.code}</span>}
+                    {pt.detail}
+                    <span className="ml-1.5 text-[10px] text-text3">{r2(pt.lamHrs + pt.finHrs)}h</span>
+                  </div>
+                  <select value={pt.mouldId} onChange={(e) => setNewPartMould(pt.key, e.target.value)} title="Default mould" className={inp.replace('mt-1 ', '')}>
+                    <option value="">— No mould —</option>
+                    {(moulds ?? []).map((m) => <option key={m.id} value={m.id}>{m.ref}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : step === 4 ? (
         <>
@@ -423,24 +504,45 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
               {warnings.map((w, i) => <div key={i} className="text-text2">{w}</div>)}
             </div>
           )}
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface2 text-left text-[10px] font-bold uppercase text-text3">
-                <th className="px-2.5 py-1.5">Code</th><th className="px-2.5 py-1.5">Name</th><th className="px-2.5 py-1.5">SKU</th>
-                <th className="px-2.5 py-1.5">Type</th><th className="px-2.5 py-1.5">Price</th><th className="px-2.5 py-1.5">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parsed.map((p, pi) => (
-                <PreviewRows key={pi} p={p} exists={!!existsFor(p.productCode)} moulds={moulds ?? []} />
-              ))}
-            </tbody>
-          </table>
+          {newParts.length > 0 && (
+            <div className="mb-3">
+              <div className={`${lbl} mb-1`}>New library parts ({newParts.length})</div>
+              <table className="w-full border-collapse text-xs">
+                <tbody>
+                  {newParts.map((pt) => (
+                    <tr key={pt.key} className="border-b border-border">
+                      <td className="px-2.5 py-1 font-mono text-[11px] text-teal">{pt.code || '—'}</td>
+                      <td className="px-2.5 py-1">{pt.detail}</td>
+                      <td className="px-2.5 py-1 text-[10px] text-text3">{pt.lamHrs}h lam · {pt.finHrs}h fin</td>
+                      <td className="px-2.5 py-1 text-[10px] text-text3">{pt.price ? `£${pt.price.toFixed(2)}` : '—'}</td>
+                      <td className="px-2.5 py-1 text-[10px] text-text3">{pt.mouldId ? `⚒ ${mouldRef(pt.mouldId) ?? ''}` : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {parsed.length > 0 && (
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-border bg-surface2 text-left text-[10px] font-bold uppercase text-text3">
+                  <th className="px-2.5 py-1.5">Code</th><th className="px-2.5 py-1.5">Name</th><th className="px-2.5 py-1.5">SKU</th>
+                  <th className="px-2.5 py-1.5">Type</th><th className="px-2.5 py-1.5">Hours / price</th><th className="px-2.5 py-1.5">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parsed.map((p, pi) => (
+                  <PreviewRows key={pi} p={p} exists={!!existsFor(p.productCode)} moulds={moulds ?? []} library={library ?? []} />
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       ) : (
         <>
-          <div className="mb-4 grid grid-cols-3 gap-3">
+          <div className="mb-4 grid grid-cols-4 gap-3">
             {[
+              [newParts.length, 'New parts'],
               [parsed.length, 'Products'],
               [newCount, 'New'],
               [parsed.length - newCount, 'Updates'],
@@ -452,7 +554,7 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
             ))}
           </div>
           <div className="rounded-lg bg-surface2 px-4 py-3 text-xs text-text2">
-            SKUs have been defined for all products. Existing products with matching product codes will be updated.
+            New parts are added to the library first, then products are linked to them. Existing products with matching product codes will be updated; existing parts are reused unchanged.
           </div>
         </>
       )}
@@ -460,8 +562,18 @@ export function CatalogueImportWizard({ catalogue, onClose }: { catalogue: Catal
   );
 }
 
-function PreviewRows({ p, exists, moulds }: { p: ParsedProduct; exists: boolean; moulds: Mould[] }) {
+function PreviewRows({ p, exists, moulds, library }: { p: ParsedProduct; exists: boolean; moulds: Mould[]; library: CataloguePart[] }) {
   const mouldRef = (id: string) => moulds.find((m) => String(m.id) === id)?.ref;
+  // Totals the product will get: existing parts from the library, new from the row.
+  const contrib = (pt: ParsedPart) => {
+    const lib = pt.existingId != null ? library.find((x) => x.id === pt.existingId) : undefined;
+    const lam = (lib ? lib.lamHrs ?? lib.hrs : pt.lamHrs) * pt.qty;
+    const fin = (lib ? lib.finHrs ?? 0 : pt.finHrs) * pt.qty;
+    const price = (lib ? lib.price : pt.price) * pt.qty;
+    return { hrs: r2(lam + fin), price: r2(price), mould: lib ? lib.mould?.ref : mouldRef(pt.mouldId) };
+  };
+  const totals = p.parts.reduce((t, pt) => { const c = contrib(pt); return { hrs: r2(t.hrs + c.hrs), price: r2(t.price + c.price) }; }, { hrs: 0, price: 0 });
+  const single = p.parts.length <= 1;
   return (
     <>
       <tr className="border-b border-border">
@@ -469,25 +581,30 @@ function PreviewRows({ p, exists, moulds }: { p: ParsedProduct; exists: boolean;
         <td className="px-2.5 py-1.5 font-semibold">{p.name}</td>
         <td className="px-2.5 py-1.5 font-mono text-[11px]">{p.sku}</td>
         <td className="px-2.5 py-1.5">
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${p.isSingle ? 'bg-teal-l text-teal' : 'bg-[#4a42b022] text-[#6d5fd0]'}`}>
-            {p.isSingle ? 'Single' : 'Assembly'}
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${single ? 'bg-teal-l text-teal' : 'bg-[#4a42b022] text-[#6d5fd0]'}`}>
+            {single ? 'Single' : 'Assembly'}
           </span>
         </td>
-        <td className="px-2.5 py-1.5 tabular-nums">{p.unitPrice ? `£${p.unitPrice.toFixed(2)}` : '—'}</td>
+        <td className="px-2.5 py-1.5 tabular-nums">{totals.hrs}h · £{totals.price.toFixed(2)}</td>
         <td className="px-2.5 py-1.5">
           <span className={`text-[10px] font-bold ${exists ? 'text-amber' : 'text-teal'}`}>{exists ? '↻ Update' : '+ New'}</span>
         </td>
       </tr>
-      {p.parts.map((pt, i) => (
-        <tr key={i} className="border-b border-border bg-surface2/50">
-          <td className="px-2.5 py-1" />
-          <td className="px-2.5 py-1 text-[11px] text-text3">└ {pt.detail}</td>
-          <td className="px-2.5 py-1 font-mono text-[10px] text-text3">{pt.drawing ?? ''}</td>
-          <td className="px-2.5 py-1 text-[10px] text-text3">{pt.hrs}h</td>
-          <td className="px-2.5 py-1 text-[10px] text-text3">{pt.mouldId ? `⚒ ${mouldRef(pt.mouldId) ?? ''}` : ''}</td>
-          <td />
-        </tr>
-      ))}
+      {p.parts.map((pt, i) => {
+        const c = contrib(pt);
+        return (
+          <tr key={i} className="border-b border-border bg-surface2/50">
+            <td className="px-2.5 py-1 font-mono text-[10px] text-text3">{pt.code}</td>
+            <td className="px-2.5 py-1 text-[11px] text-text3">└ {pt.detail}{pt.qty === 0.5 ? ' (½ mould)' : ''}</td>
+            <td className="px-2.5 py-1 text-[10px]">
+              <span className={pt.existingId != null ? 'text-text3' : 'font-bold text-teal'}>{pt.existingId != null ? 'library' : 'NEW'}</span>
+            </td>
+            <td className="px-2.5 py-1 text-[10px] text-text3">{c.hrs}h</td>
+            <td className="px-2.5 py-1 text-[10px] text-text3">{c.mould ? `⚒ ${c.mould}` : ''}</td>
+            <td />
+          </tr>
+        );
+      })}
     </>
   );
 }

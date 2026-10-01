@@ -4,6 +4,7 @@ import { apiClient } from './api';
 import { supabase } from './supabase';
 import type {
   Catalogue,
+  CataloguePart,
   Customer,
   DashboardData,
   FinishType,
@@ -563,18 +564,18 @@ export function useUpdateSettings() {
   });
 }
 
-export interface CataloguePartInput { detail: string; drawing?: string | null; hrs?: number; lamHrs?: number | null; finHrs?: number | null; price?: number; mouldId?: number | null }
+/** A product's link to a library part: one piece at a whole or half mould. */
+export interface CatalogueLinkInput { partId: number; qty: 1 | 0.5 }
+/** Price, hours and single-piece are derived from the linked parts server-side. */
 export interface CatalogueFormInput {
   productCode: string;
   name: string;
   code?: string | null;
-  unitPrice?: number;
-  singlePiece?: boolean;
-  assemblyHrs?: number;
+  drawing?: string | null;
   gelCureMins?: number | null;
   lamCureMins?: number | null;
   specUrl?: string | null;
-  parts?: CataloguePartInput[];
+  parts?: CatalogueLinkInput[];
   hardware?: { name: string; qty: number }[];
 }
 
@@ -583,6 +584,68 @@ export function useCreateCatalogue() {
   return useMutation({
     mutationFn: (input: CatalogueFormInput) => apiClient.post<Catalogue>('/api/catalogue', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['catalogue'] }),
+  });
+}
+
+// ─── Parts library (client: "flip the catalogue") ────────────────────────────
+export interface CataloguePartFormInput {
+  detail: string;
+  drawing?: string | null;
+  spec?: string | null;
+  lamHrs?: number;
+  finHrs?: number;
+  price?: number;
+  mouldId?: number | null;
+}
+
+export function useCatalogueParts() {
+  return useQuery({
+    queryKey: ['catalogue-parts'],
+    queryFn: () => apiClient.get<CataloguePart[]>('/api/catalogue/parts'),
+  });
+}
+
+/** Library parts feed product totals, so both caches refresh on any change. */
+function invalidateLibrary(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['catalogue-parts'] });
+  qc.invalidateQueries({ queryKey: ['catalogue'] });
+}
+
+export function useCreateCataloguePart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CataloguePartFormInput) => apiClient.post<CataloguePart>('/api/catalogue/parts', input),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useUpdateCataloguePart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<CataloguePartFormInput> }) =>
+      apiClient.patch<CataloguePart>(`/api/catalogue/parts/${id}`, input),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+export function useDeleteCataloguePart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiClient.del(`/api/catalogue/parts/${id}`),
+    onSuccess: () => invalidateLibrary(qc),
+  });
+}
+
+/** Link a library part to its default mould (Moulds → Unlinked Catalogue). */
+export function useSetPartMould() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, mouldId }: { id: number; mouldId: number | null }) =>
+      apiClient.patch<CataloguePart>(`/api/catalogue/parts/${id}/mould`, { mouldId }),
+    onSuccess: () => {
+      invalidateLibrary(qc);
+      qc.invalidateQueries({ queryKey: ['moulds'] });
+    },
   });
 }
 

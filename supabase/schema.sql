@@ -172,17 +172,36 @@ create table "catalogue" (
   "deletedAt"   timestamptz
 );
 
+-- Parts library: one row per unique moulded piece (code + detail), owned by
+-- nobody. Products are BUILT FROM these via catalogue_product_parts, so hours
+-- and prices are entered once and roll up (client: "flip the catalogue").
 create table "catalogue_parts" (
   "id"          bigint generated always as identity primary key,
-  "catalogueId" bigint not null references "catalogue"("id") on delete cascade,
   "detail"      text not null,
   "spec"        text,
+  -- Total hours = lamHrs + finHrs (kept in step by the API).
   "hrs"         double precision not null default 0,
+  -- Labour split: Laminating = at the mould, Finishing = trim -> packing.
+  "lamHrs"      double precision,
+  "finHrs"      double precision,
   "price"       double precision not null default 0,
-  "drawing"     text,
-  "mouldId"     bigint references "moulds"("id") on delete set null
+  "drawing"     text,                   -- part / mould code
+  "mouldId"     bigint references "moulds"("id") on delete set null,
+  "createdAt"   timestamptz not null default now(),
+  "deletedAt"   timestamptz
 );
-create index on "catalogue_parts" ("catalogueId");
+
+-- Product <- part links. The same part may appear more than once in a product;
+-- each row is one piece at a whole (1) or half (0.5) mould.
+create table "catalogue_product_parts" (
+  "id"          bigint generated always as identity primary key,
+  "catalogueId" bigint not null references "catalogue"("id") on delete cascade,
+  "partId"      bigint not null references "catalogue_parts"("id") on delete restrict,
+  "qty"         double precision not null default 1 check ("qty" in (0.5, 1)),
+  "sort"        integer not null default 0
+);
+create index on "catalogue_product_parts" ("catalogueId");
+create index on "catalogue_product_parts" ("partId");
 
 create table "catalogue_hardware" (
   "id"          bigint generated always as identity primary key,
@@ -249,7 +268,7 @@ declare t text;
 begin
   foreach t in array array[
     'customers','operatives','moulds','orders','tickets','ticket_assignments',
-    'time_sessions','catalogue','catalogue_parts','catalogue_hardware','audit_log','users','settings'
+    'time_sessions','catalogue','catalogue_parts','catalogue_product_parts','catalogue_hardware','audit_log','users','settings'
   ]
   loop
     execute format('alter table %I enable row level security', t);

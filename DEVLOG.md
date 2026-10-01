@@ -1916,6 +1916,70 @@ all three tables.
 
 ---
 
+## 2026-10-01 — Parts library: products are built from unique parts (client email)
+
+Kevin's email "GRP Product Catalogue Part Selection": flip the catalogue. Each
+unique moulded piece is created ONCE (≈85, one per mould); a product is then
+built by picking those parts from a dropdown with a quantity of 1 (whole
+mould) or 0.5 (half) — nothing else. Lam/fin hours and price roll up from the
+children; a single-piece slide is just one part with no assembly.
+
+**Done**
+- **Schema** — `catalogue_parts` is now a standalone library (catalogueId
+  nullable/deprecated, + createdAt/deletedAt); new `catalogue_product_parts`
+  (catalogueId, partId, qty ∈ {0.5, 1} enforced by a CHECK, sort). The same
+  part may be linked more than once to one product. schema.sql + seed.sql
+  updated for fresh installs.
+- **Migration** `scripts/migrate-parts-library.ts` — applied live via Kong
+  /pg/query (direct pg drops the socket, as before). De-dups live part rows
+  by (code, normalised detail): 30 rows → **16 library parts**, 31 links
+  (13609 ×15, 15105 ×7, 15106 ×8, 12609 ×1). The Toddler single (no part rows,
+  11.33h on assemblyHrs) got its own library part so no labour was lost.
+  83 rows retired (duplicates + parts of soft-deleted products). Product
+  prices preserved as stored; library parts start at £0.
+- **API** `routes/catalogue.ts` rewritten: `GET/POST/PATCH/DELETE
+  /api/catalogue/parts[/:id]`, `PATCH /parts/:id/mould`; products take
+  `parts: [{partId, qty}]`, and `unitPrice` / `singlePiece` / `assemblyHrs`
+  are DERIVED (Σ part.price × qty; one link ⇒ single; 0). Guards: 409 on a
+  duplicate (code, detail), 409 deleting a part a live product uses, 400 on
+  unknown partId or qty ∉ {0.5, 1}. Editing a part's price re-rolls every
+  product using it. Product `parts` come back flattened in link order with
+  `qty` + `linkId`, so existing consumers keep working.
+- **Order expansion** (`orders.ts`) reads the links: PART hours and price ×
+  qty, ½-mould pieces labelled "(½ MOULD)", mould inherited. The COMP ticket
+  now carries **0h** — all labour is on the parts (per the email).
+- **Web** — Product Catalogue has two tabs: 📦 Products and 🧩 Parts Library
+  (new `PartForm`, usage counts, delete guarded). `CatalogueForm` is a
+  pick-from-library builder: part dropdown + [1 | ½] toggle per row, read-only
+  lam/fin/£ per row, live roll-up panel (type · lam · fin · total · price),
+  "+ New library part…" inline, and a warning when saving will change the
+  price on file. Single-piece checkbox, assembly hours and sell-price inputs
+  removed. CSV import wizard re-based: part rows create/reuse library parts
+  by code (+ detail), products link them with `part_qty`; old sell_price /
+  assembly_hrs columns ignored with a warning. Moulds → Unlinked Catalogue is
+  now one row per library part (`UnlinkedPartsTab`). Previews/spec viewer/
+  ticket→template matching are qty-aware (`lib/catalogue.ts`).
+- Verified: typecheck + build clean; API e2e (part → product with 1 + ½ links
+  = £150, part price change → £300, order expansion → COMP 0h, PART 6h/£200,
+  PART "(½ MOULD)" 3h/£100, mould 51; all cleaned up); browser walk — products
+  table totals, library tab 16 rows, edit form prefilled with 15 rows, ½
+  toggle updates the roll-up live, price-on-file warning, Unlinked tab (1).
+
+**Decisions (not confirmed by Kevin — flag at review)**
+- Product price = Σ parts only; no product-level assembly/markup figure.
+- qty 0.5 scales labour/price only; the Mould Board still treats a mould as
+  occupied/free (no half-occupancy).
+- Library identity is code **+ detail** — live data uses one mould code for
+  several cuts (12349 = 90°/50°/64° sections), so code alone would merge them.
+
+**Next up**
+- Kevin to price the 16 migrated parts (currently £0) and confirm the three
+  decisions above. Existing product prices stay until a product is re-saved.
+- "Delete" on the library stays disabled while a part is in use — remove it
+  from the product first (by design).
+
+---
+
 ## 2026-09-21 — September snag list: items 10–28 (dashboard links, grouping, board edits)
 
 **Done**

@@ -13,6 +13,7 @@ import {
   useUpdateTicket,
 } from '../lib/hooks';
 import { computeSuggestedSchedule } from '../lib/suggestSchedule';
+import { partContribution, productTotals } from '../lib/catalogue';
 import { Button, Field as FieldBase, FormSection as FormSectionBase, inputClassLg as inputClass } from './ui';
 import { CatalogueForm } from './CatalogueForm';
 import { TicketForm } from './TicketForm';
@@ -372,9 +373,9 @@ function PreviewTypeBadge({ type }: { type: string }) {
  */
 function CataloguePreview({ selected, colour, resin }: { selected: Catalogue; colour: string; resin: string }) {
   const parts = selected.parts ?? [];
-  const isMulti = !selected.singlePiece && parts.length > 1;
-  const asmHrs = selected.assemblyHrs || 0;
-  const totalHrs = parts.reduce((s, p) => s + (p.hrs || 0), 0) + asmHrs;
+  const isMulti = parts.length > 1;
+  // An assembly's hours are entirely its children's (each at its mould fraction).
+  const totalHrs = productTotals(parts).hrs;
   const resinTag = resin === 'M2' ? ' / M2 RESIN' : '';
   const spec = (colour ? colour + resinTag : resinTag).replace(/^\s*\/\s*/, '');
   const single = parts[0];
@@ -412,14 +413,17 @@ function CataloguePreview({ selected, colour, resin }: { selected: Catalogue; co
                     {selected.name} <span className="text-[10px] font-normal text-text3">(assembly)</span>
                   </td>
                   <td className="px-2.5 py-1">{spec || '—'}</td>
-                  <td className="px-2.5 py-1 text-right">{asmHrs ? `${asmHrs}h` : '—'}</td>
+                  <td className="px-2.5 py-1 text-right text-text3">—</td>
                 </tr>
                 {parts.map((p) => (
-                  <tr key={p.id} className="border-t border-border">
+                  <tr key={p.linkId ?? p.id} className="border-t border-border">
                     <td className="px-2.5 py-1 pl-5"><PreviewTypeBadge type="PART" /></td>
-                    <td className="px-2.5 py-1 text-text2">{p.detail}</td>
+                    <td className="px-2.5 py-1 text-text2">
+                      {p.detail}
+                      {p.qty === 0.5 && <span className="ml-1.5 rounded bg-amber-l px-1 py-px text-[9px] font-bold text-amber">½ MOULD</span>}
+                    </td>
                     <td className="px-2.5 py-1">{spec || p.spec || '—'}</td>
-                    <td className="px-2.5 py-1 text-right">{p.hrs || 0}h</td>
+                    <td className="px-2.5 py-1 text-right">{partContribution(p).hrs}h</td>
                   </tr>
                 ))}
               </>
@@ -428,7 +432,7 @@ function CataloguePreview({ selected, colour, resin }: { selected: Catalogue; co
                 <td className="px-2.5 py-1"><PreviewTypeBadge type="MADE" /></td>
                 <td className="px-2.5 py-1 font-semibold">{selected.name}</td>
                 <td className="px-2.5 py-1">{spec || single?.spec || '—'}</td>
-                <td className="px-2.5 py-1 text-right">{single?.hrs || 0}h</td>
+                <td className="px-2.5 py-1 text-right">{single ? partContribution(single).hrs : 0}h</td>
               </tr>
             )}
           </tbody>

@@ -108,18 +108,30 @@ export type TicketInput = z.infer<typeof ticketInputSchema>;
 export const ticketUpdateSchema = ticketInputSchema.partial().omit({ orderId: true });
 
 // ─── Catalogue ─────────────────────────────────────────────────────────────
+/**
+ * A library part — one unique moulded piece, created once and reused by any
+ * number of products (client: "flip the catalogue"). `drawing` is the part /
+ * mould code; code + detail together identify the part.
+ */
 export const cataloguePartInputSchema = z.object({
   detail: z.string().min(1),
   spec: z.string().nullish(),
-  /** Total hours (lamHrs + finHrs); kept as the back-compat sum. */
-  hrs: z.number().nonnegative().default(0),
-  /** Labour split (phase 2): Laminating = at-the-mould work, Finishing = trim → packing. */
-  lamHrs: z.number().nonnegative().nullish(),
-  finHrs: z.number().nonnegative().nullish(),
+  /** Labour split: Laminating = at-the-mould work, Finishing = trim → packing. */
+  lamHrs: z.number().nonnegative().default(0),
+  finHrs: z.number().nonnegative().default(0),
   price: z.number().nonnegative().default(0),
   drawing: z.string().nullish(),
   mouldId: z.number().int().nullish(),
 });
+export type CataloguePartInput = z.infer<typeof cataloguePartInputSchema>;
+
+/** A product's link to a library part: one piece at a whole or half mould. */
+export const PART_QTYS = [1, 0.5] as const;
+export const catalogueProductPartSchema = z.object({
+  partId: z.number().int(),
+  qty: z.union([z.literal(1), z.literal(0.5)]).default(1),
+});
+export type CatalogueProductPartInput = z.infer<typeof catalogueProductPartSchema>;
 
 export const catalogueHardwareInputSchema = z.object({
   name: z.string().min(1),
@@ -129,18 +141,21 @@ export const catalogueHardwareInputSchema = z.object({
   notes: z.string().nullish(),
 });
 
+/**
+ * A product is built from library parts. Price, hours and the single-piece
+ * flag are DERIVED from the linked parts server-side, so they're not inputs:
+ * a product with one part at qty 1 is a single slide; anything else is an
+ * assembly whose labour is the sum of its children.
+ */
 export const catalogueInputSchema = z.object({
   productCode: z.string().min(1),
   name: z.string().min(1),
   code: z.string().nullish(),
   drawing: z.string().nullish(),
-  unitPrice: z.number().nonnegative().default(0),
-  singlePiece: z.boolean().default(false),
-  assemblyHrs: z.number().nonnegative().default(0),
   gelCureMins: z.number().int().nonnegative().nullish(),
   lamCureMins: z.number().int().nonnegative().nullish(),
   specUrl: z.string().nullish(),
-  parts: z.array(cataloguePartInputSchema).default([]),
+  parts: z.array(catalogueProductPartSchema).default([]),
   hardware: z.array(catalogueHardwareInputSchema).default([]),
 });
 export type CatalogueInput = z.infer<typeof catalogueInputSchema>;

@@ -85,7 +85,7 @@ export function AddTicketModal({ orderId, onClose }: { orderId: number; onClose:
                   <option value="">— Select product —</option>
                   {(catalogue ?? []).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} ({c.code ?? c.productCode}) — {c.parts.length} part{c.parts.length === 1 ? '' : 's'}
+                      {c.name} ({c.code ?? c.productCode}) — {c.parts.length === 1 ? 'single piece' : `${c.parts.length} pieces`}
                     </option>
                   ))}
                 </select>

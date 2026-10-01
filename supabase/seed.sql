@@ -26,11 +26,10 @@ insert into "catalogue_hardware" ("catalogueId","name","qty","notes")
   union all
   select "id", 'Slide Feet', 4, '' from "catalogue";
 
--- Parts (keyed by productCode)
-insert into "catalogue_parts" ("catalogueId","detail","hrs","drawing")
-select c."id", p."detail", p."hrs", p."drawing"
-from "catalogue" c
-join (values
+-- Parts library (one row per unique piece), then the product links. The seed
+-- keys each part to its product by productCode purely to build the links.
+create temp table seed_parts ("productCode" text, "detail" text, "hrs" double precision, "drawing" text, "ord" serial);
+insert into seed_parts ("productCode","detail","hrs","drawing") values
   ('10420','[TLW-2050] Lane part left',         8,  'DRW-TLW-2050-01'),
   ('10420','[TLW-2050] Lane part right',        8,  'DRW-TLW-2050-02'),
   ('10420','[TLW-2050] Side panel left',        4,  'DRW-TLW-2050-03'),
@@ -76,7 +75,18 @@ join (values
   ('5519', '[CTA-2XSP] 90° bend section',      5, 'DRW-CTA-2XSP-02'),
   ('5519', '[CTA-2XSP] Straight tube section', 5, 'DRW-CTA-2XSP-03'),
   ('5519', '[CTA-2XSP] Half tube sections',    4, 'DRW-CTA-2XSP-04')
-) as p("productCode","detail","hrs","drawing") on p."productCode" = c."productCode";
+;
+
+insert into "catalogue_parts" ("detail","hrs","lamHrs","finHrs","drawing")
+select "detail", "hrs", "hrs", 0, "drawing" from seed_parts order by "ord";
+
+insert into "catalogue_product_parts" ("catalogueId","partId","qty","sort")
+select c."id", cp."id", 1, s."ord"
+from seed_parts s
+join "catalogue" c on c."productCode" = s."productCode"
+join "catalogue_parts" cp on cp."drawing" = s."drawing" and cp."detail" = s."detail";
+
+drop table seed_parts;
 
 -- ─── DEMO data (dev visibility — safe to delete) ─────────────────────────────
 insert into "customers" ("name","contact","phone","email","region") values

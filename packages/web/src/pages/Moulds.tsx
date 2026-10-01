@@ -2,11 +2,11 @@ import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { isoDate, mondayOf, wcKey } from '@bowson/shared';
-import { useAssignMould, useCatalogue, useMoulds, useTickets, useUpdateMould } from '../lib/hooks';
+import { useAssignMould, useCatalogueParts, useMoulds, useTickets, useUpdateMould } from '../lib/hooks';
 import { apiClient } from '../lib/api';
 import { Button, Card, Content, PageHeader, QueryState, Table } from '../components/ui';
 import { MouldForm } from '../components/MouldForm';
-import { CatalogueForm } from '../components/CatalogueForm';
+import { UnlinkedPartsTab } from '../components/UnlinkedPartsTab';
 import { useAuth } from '../lib/auth';
 import { downloadCsv, parseCsv } from '../lib/csv';
 import { cureState, fmtCureMins } from '../lib/format';
@@ -38,7 +38,7 @@ function inUseGroup(m: Mould, occ: ReturnType<typeof occupancy>): StatFilter | '
 export function Moulds() {
   const { data: moulds, isLoading, error } = useMoulds();
   const { data: tickets } = useTickets();
-  const { data: catalogue } = useCatalogue();
+  const { data: libraryParts } = useCatalogueParts();
   const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>('board');
   const [statFilter, setStatFilter] = useState<StatFilter>(() =>
@@ -50,8 +50,8 @@ export function Moulds() {
 
   const rows = moulds ?? [];
   const liveTickets = tickets ?? [];
-  const cat = catalogue ?? [];
-  const unlinkedCount = cat.reduce((n, c) => n + c.parts.filter((p) => !p.mouldId).length, 0);
+  // Library parts with no default mould (one row per unique part, not per product copy).
+  const unlinkedCount = (libraryParts ?? []).filter((p) => !p.mouldId).length;
 
   // Status-bar metrics.
   const occs = rows.map((m) => occupancy(m, liveTickets));
@@ -131,7 +131,7 @@ export function Moulds() {
         {tab === 'board' && <BoardTab moulds={filtered} tickets={liveTickets} />}
         {tab === 'schedule' && <ScheduleTab moulds={rows} tickets={liveTickets} />}
         {tab === 'unassigned' && <UnassignedTab moulds={rows} tickets={liveTickets} />}
-        {tab === 'unlinked' && <UnlinkedTab catalogue={cat} moulds={moulds ?? []} />}
+        {tab === 'unlinked' && <UnlinkedPartsTab parts={libraryParts ?? []} moulds={moulds ?? []} />}
       </Content>
     </>
   );
@@ -537,80 +537,6 @@ function ScheduleTab({ moulds, tickets }: { moulds: Mould[]; tickets: Ticket[] }
             ))}
           </tbody>
         </table>
-      </div>
-    </>
-  );
-}
-
-// ─── Unlinked catalogue (parts with no default mould) ────────────────────────
-function UnlinkedTab({ catalogue, moulds }: { catalogue: Catalogue[]; moulds: Mould[] }) {
-  const qc = useQueryClient();
-  const [busyPart, setBusyPart] = useState<number | null>(null);
-  const [editing, setEditing] = useState<Catalogue | null>(null);
-  const groups = catalogue
-    .map((c) => ({ c, parts: c.parts.filter((p) => !p.mouldId) }))
-    .filter((g) => g.parts.length > 0);
-
-  /** Link a catalogue part to its default mould (ported from linkPartToMould). */
-  async function link(catalogueId: number, partId: number, mouldId: number) {
-    setBusyPart(partId);
-    try {
-      await apiClient.patch(`/api/catalogue/${catalogueId}/parts/${partId}`, { mouldId });
-    } finally {
-      setBusyPart(null);
-      qc.invalidateQueries({ queryKey: ['catalogue'] });
-      qc.invalidateQueries({ queryKey: ['moulds'] });
-    }
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border bg-surface py-14 text-center">
-        <div className="mb-2 text-4xl">✓</div>
-        <div className="text-sm font-bold text-text2">All catalogue parts linked</div>
-        <div className="mt-1 text-xs text-text3">Every part in the product catalogue has a default mould assigned.</div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="mb-3 text-xs text-text3">
-        {groups.reduce((n, g) => n + g.parts.length, 0)} part(s) across {groups.length} product(s) have no default mould.
-        Linking them here means new tickets created from these products automatically know which mould to use.
-      </div>
-      {editing && <CatalogueForm catalogue={editing} onClose={() => setEditing(null)} />}
-      <div className="grid gap-3 md:grid-cols-2">
-        {groups.map(({ c, parts }) => (
-          <Card
-            key={c.id}
-            title={`${c.name}${c.code ? ` · ${c.code}` : ''}`}
-            actions={<Button onClick={() => setEditing(c)}>Edit Product →</Button>}
-          >
-            <Table head={['Part', 'Drawing', 'Hrs', 'Link mould']}>
-              {parts.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-1.5">{p.detail}</td>
-                  <td className="px-3 py-1.5 text-text3">{p.drawing ?? '—'}</td>
-                  <td className="px-3 py-1.5 tabular-nums text-text2">{p.hrs}</td>
-                  <td className="px-3 py-1.5">
-                    <select
-                      value=""
-                      disabled={busyPart === p.id}
-                      onChange={(e) => e.target.value && void link(c.id, p.id, Number(e.target.value))}
-                      className="rounded-md border border-teal bg-surface px-1.5 py-1 text-[11px] outline-none"
-                    >
-                      <option value="">— Select a mould —</option>
-                      {moulds.map((m) => (
-                        <option key={m.id} value={m.id}>{m.ref}{m.name ? ` (${m.name.slice(0, 40)})` : ''}</option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </Table>
-          </Card>
-        ))}
       </div>
     </>
   );

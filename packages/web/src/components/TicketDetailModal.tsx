@@ -19,6 +19,7 @@ import { TicketStatusSelect } from './TicketStatusSelect';
 import { EditTicketModal } from './EditTicketModal';
 import { SpecModal } from './SpecModal';
 import { cureState, fmtCureMins, fmtElapsed, initials, money } from '../lib/format';
+import { findTemplateForTicket } from '../lib/catalogue';
 
 const MOULD_STAGES = ['3. Queue - Awaiting Mould', '4. Gel Coat & Laminate'];
 const CURE_STAGES = ['4. Gel Coat & Laminate'];
@@ -45,10 +46,7 @@ export function TicketDetailModal({ ticketId, onClose }: { ticketId: number; onC
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   // Matched catalogue template for the spec/parts viewer (ported from kbViewSpec).
-  const specTemplate = useMemo(() => {
-    if (!t) return undefined;
-    return (catalogue ?? []).find((c) => c.name === t.detail || c.parts.some((p) => p.detail === t.detail));
-  }, [catalogue, t]);
+  const specTemplate = useMemo(() => (t ? findTemplateForTicket(catalogue ?? [], t) : undefined), [catalogue, t]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

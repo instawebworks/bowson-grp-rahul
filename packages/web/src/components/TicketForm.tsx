@@ -1,6 +1,7 @@
 import { useMemo, useState, type ComponentProps } from 'react';
 import { GRP_STAGES, RAW_STAGES } from '@bowson/shared';
 import { useAddTicket, useCatalogue, type AddTicketInput } from '../lib/hooks';
+import { productTotals } from '../lib/catalogue';
 import { Button, Field as FieldBase, FormSection as FormSectionBase, Modal, inputClassLg as inputClass } from './ui';
 import type { Catalogue, CataloguePart } from '../lib/types';
 
@@ -90,7 +91,7 @@ export function TicketForm({
     if (!tpl) return;
     setDetail((prev) => prev || `[${tpl.code ?? tpl.productCode}] ${tpl.name.toUpperCase()}`);
     setDrawing(tpl.drawing ?? tpl.code ?? '');
-    setHrs(tpl.parts[0]?.hrs ?? tpl.assemblyHrs ?? 0);
+    setHrs(productTotals(tpl.parts).hrs);
     setUnitPrice(tpl.unitPrice ?? 0);
   }
 
@@ -105,7 +106,8 @@ export function TicketForm({
     setParts(tpl.parts ?? []);
     setDetail((prev) => prev || tpl.name);
     setDrawing(tpl.drawing ?? tpl.code ?? '');
-    setHrs(tpl.assemblyHrs ?? 0);
+    // An assembly's own ticket carries no labour — it is all on the parts.
+    setHrs(0);
     setUnitPrice(tpl.unitPrice ?? 0);
   }
 

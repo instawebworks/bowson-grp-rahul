@@ -41,18 +41,30 @@ export interface Mould {
   notes: string | null;
 }
 
+/**
+ * A library part — one unique moulded piece, created once and reused by any
+ * number of products. On a product's `parts` array each entry also carries
+ * the link's `qty` (1 = whole mould, 0.5 = half) and `linkId`.
+ */
 export interface CataloguePart {
   id: number;
   detail: string;
   spec: string | null;
-  /** Total hours (lamHrs + finHrs) — back-compat sum. */
+  /** Total hours (lamHrs + finHrs) — kept in step by the API. */
   hrs: number;
-  /** Labour split (phase 2): Laminating (at the mould) / Finishing (trim → packing). */
+  /** Labour split: Laminating (at the mould) / Finishing (trim → packing). */
   lamHrs: number | null;
   finHrs: number | null;
   price: number;
+  /** Part / mould code. */
   drawing: string | null;
   mouldId: number | null;
+  mould?: Mould | null;
+  /** Mould fraction for this piece on a product (absent on the library list). */
+  qty?: number;
+  linkId?: number;
+  /** Live products built from this part (library list only). */
+  usedBy?: number;
 }
 
 export interface CatalogueHardware {

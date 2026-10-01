@@ -1,4 +1,5 @@
 import { Button, Modal } from './ui';
+import { partContribution, qtyLabel } from '../lib/catalogue';
 import type { Catalogue } from '../lib/types';
 
 /** The ticket the viewer was opened from — its own part is called out. */
@@ -20,8 +21,10 @@ export function SpecModal({ template, ticket, onClose }: { template: Catalogue; 
   const url = template.specUrl;
   const isPdf = !!url && url.startsWith('data:application/pdf');
   const isPart = ticket?.type === 'PART' || ticket?.type === 'MADE';
+  // A half-mould piece's ticket is labelled "(½ MOULD)" — strip it to match.
+  const base = (ticket?.detail ?? '').replace(/\s*\(½ MOULD\)$/, '');
   const matches = (p: { detail: string; drawing: string | null }) =>
-    !!ticket && isPart && (p.detail === ticket.detail || (!!ticket.drawing && p.drawing === ticket.drawing));
+    !!ticket && isPart && (p.detail === base || (!!ticket.drawing && p.drawing === ticket.drawing));
   return (
     <Modal
       title={`Specification — ${template.name}`}
@@ -78,6 +81,7 @@ export function SpecModal({ template, ticket, onClose }: { template: Catalogue; 
               <tr className="border-b border-border bg-surface2 text-left text-[10px] font-bold uppercase text-text3">
                 <th className="px-3 py-1.5">Part</th>
                 <th className="px-3 py-1.5">Drawing ref</th>
+                <th className="px-3 py-1.5">Mould qty</th>
                 <th className="px-3 py-1.5">Hrs</th>
               </tr>
             </thead>
@@ -86,18 +90,19 @@ export function SpecModal({ template, ticket, onClose }: { template: Catalogue; 
                 template.parts.map((p) => {
                   const mine = matches(p);
                   return (
-                    <tr key={p.id} className={`border-b border-border last:border-0 ${mine ? 'bg-teal-l/60 font-semibold' : ''}`}>
+                    <tr key={p.linkId ?? p.id} className={`border-b border-border last:border-0 ${mine ? 'bg-teal-l/60 font-semibold' : ''}`}>
                       <td className="px-3 py-1.5">
                         {p.detail}
                         {mine && <span className="ml-2 rounded bg-teal px-1.5 py-px text-[9px] font-bold text-white">THIS PART</span>}
                       </td>
                       <td className="px-3 py-1.5 font-mono text-[11px] text-text2">{p.drawing ?? '—'}</td>
-                      <td className="px-3 py-1.5 tabular-nums text-text2">{p.hrs}</td>
+                      <td className="px-3 py-1.5 text-center text-text2">{qtyLabel(p.qty)}</td>
+                      <td className="px-3 py-1.5 tabular-nums text-text2">{partContribution(p).hrs}</td>
                     </tr>
                   );
                 })
               ) : (
-                <tr><td colSpan={3} className="px-3 py-6 text-center text-text3">Single-piece product — no part list.</td></tr>
+                <tr><td colSpan={4} className="px-3 py-6 text-center text-text3">No parts linked to this product.</td></tr>
               )}
             </tbody>
           </table>

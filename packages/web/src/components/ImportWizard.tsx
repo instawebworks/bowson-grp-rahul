@@ -187,10 +187,10 @@ function parseImport(text: string, catalogue: Catalogue[], finishTypes: FinishTy
       warnings.push(`Row ${rowNo}: finish_type "${finishRaw}" not recognised — imported as PLAIN.`);
     }
 
-    // Server-side expansion creates PART tickets in part-id order, so align
-    // partSpecs (and the review display) to that same order.
-    const catParts = cat ? cat.parts.slice().sort((a, b) => a.id - b.id) : [];
-    const isSingle = !cat || cat.singlePiece || catParts.length <= 1;
+    // Server-side expansion creates PART tickets in the product's link order —
+    // the order the catalogue API returns — so partSpecs line up as-is.
+    const catParts = cat ? cat.parts : [];
+    const isSingle = !cat || catParts.length <= 1;
     let ticketsDesc: string;
     let ticketsCount: number;
     if (cat) {
